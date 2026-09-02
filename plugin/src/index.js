@@ -112,7 +112,11 @@ class HotPocketPlugin extends EventEmitter {
   // ---- internals -------------------------------------------------------------------------
 
   async _submit(obj) {
-    const { submissionStatus } = await this._client.submitContractInput(JSON.stringify(obj));
+    // HotPocket requires each user's input nonces to be strictly increasing. The client's
+    // default nonce is Date.now(), which collides when STREAM fires several packets in the same
+    // millisecond, so keep our own monotonic one.
+    this._nonce = Math.max((this._nonce || 0) + 1, Date.now());
+    const { submissionStatus } = await this._client.submitContractInput(JSON.stringify(obj), this._nonce);
     const status = await submissionStatus;
     if (!status || status.status !== 'accepted') throw new Error(`input rejected: ${status && status.reason}`);
     return status;

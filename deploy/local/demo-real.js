@@ -35,7 +35,6 @@ async function main() {
 
   const info = await alice.getInfo();
   say('connector info:', JSON.stringify({ address: info.connectorAddress, asset: info.assetCode, feeBps: info.feeBps, rounds: info.rounds, stats: info.stats }));
-  say('alice balance (dev faucet):', XAH((await alice.getBalance()).balance));
 
   const server = await createServer({ plugin: bob });
   let received = 0n;
@@ -46,6 +45,7 @@ async function main() {
   const t1 = Date.now();
   const conn = await createConnection({ plugin: alice, destinationAccount, sharedSecret, slippage: 0.02 });
   say(`STREAM connection established in ${Date.now() - t1} ms (ILDCP + rate probes through the cluster)`);
+  say('alice balance after her first input (dev faucet):', XAH((await alice.getBalance()).balance));
   const stream = conn.createStream();
   const t2 = Date.now();
   stream.setSendMax('1000000');

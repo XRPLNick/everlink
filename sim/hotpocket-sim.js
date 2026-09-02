@@ -265,7 +265,7 @@ class SimClient extends EventEmitter {
   async connect() { this.cluster.connectUser(this.publicKey, this); this._connected = true; return true; }
   async close() { if (this._connected) { this.cluster.disconnectUser(this.publicKey); this._connected = false; this.emit(events.disconnect); } }
   isConnected() { return this._connected; }
-  async submitContractInput(input) {
+  async submitContractInput(input, nonce = null) { // nonce accepted for API parity; the simulator orders by arrival
     const text = typeof input === 'string' ? input : input.toString();
     const submissionStatus = this.cluster.queueInput(this.publicKey, text);
     return { hash: crypto.createHash('sha256').update(text).digest('hex'), submissionStatus };
