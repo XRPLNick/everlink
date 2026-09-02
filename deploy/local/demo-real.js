@@ -20,15 +20,15 @@ const say = (...a) => console.log(new Date().toISOString().slice(11, 23), ...a);
 
 async function main() {
   const factory = hotPocketClientFactory();
-  const mk = async (server) => {
+  const mk = async (server, name) => {
     const keys = await HotPocket.generateKeys();
-    const plugin = new HotPocketPlugin({ keys, servers: [server], createClient: factory, log: (...a) => say('plugin:', ...a) });
+    const plugin = new HotPocketPlugin({ keys, servers: [server], createClient: factory, log: (...a) => say(`plugin[${name}]:`, ...a) });
     plugin.on('connector_error', (m) => say('connector says:', JSON.stringify(m)));
     return plugin;
   };
 
   say(`connecting Alice -> ${ALICE}, Bob -> ${BOB}`);
-  const alice = await mk(ALICE); const bob = await mk(BOB);
+  const alice = await mk(ALICE, 'alice'); const bob = await mk(BOB, 'bob');
   const t0 = Date.now();
   await alice.connect(); await bob.connect();
   say(`connected in ${Date.now() - t0} ms`);

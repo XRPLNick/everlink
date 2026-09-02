@@ -52,6 +52,11 @@ class HotPocketPlugin extends EventEmitter {
       servers: this._servers, keys: this._keys, contractId: this._contractId, requiredConnectionCount: this._requiredConnectionCount,
     });
     this._client.on(OUTPUT_EVENT, (r) => this._onOutputs(r));
+    // Diagnostics only: the real client reconnects on its own and tells us about it.
+    if (typeof this._client.on === 'function') {
+      this._client.on('connection_change', (server, action) => this._log(`connection ${action}: ${server}`));
+      this._client.on('disconnect', () => this._log('client reports it gave up its connections'));
+    }
     const ok = await this._client.connect();
     if (ok === false) throw new Error('could not connect to the connector cluster');
     this._connected = true;
@@ -128,7 +133,9 @@ class HotPocketPlugin extends EventEmitter {
         if (!status || status.status !== 'accepted') throw new Error(`input rejected: ${status && status.reason}`);
         return status;
       }
-      if (!this._connected || attempt >= SUBMIT_RETRIES) throw new Error('no connection to the connector cluster');
+      if (!this._connected) throw new Error('plugin is disconnected');
+      if (attempt >= SUBMIT_RETRIES) throw new Error('no connection to the connector cluster');
+      if (attempt === 0) this._log('submit: client had no connection, waiting for it to reconnect');
       await new Promise((r) => setTimeout(r, SUBMIT_RETRY_MS));
     }
   }
