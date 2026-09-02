@@ -1,0 +1,522 @@
+<title>Nomad Connector</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F6F8F7;
+    --surface: #FFFFFF;
+    --ink: #1B2430;
+    --ink-2: #3D4954;
+    --muted: #66727C;
+    --rule: #D5DCDA;
+    --rule-soft: #E6EBE9;
+    --accent: #0E6B6B;
+    --accent-soft: #DCEEEC;
+    --money: #B06E12;
+    --money-soft: #F7E9D2;
+    --warn: #9A3B2E;
+    --code-bg: #EEF2F1;
+    --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #121A1F;
+      --surface: #182229;
+      --ink: #E4EBE9;
+      --ink-2: #C3CDCA;
+      --muted: #94A2A0;
+      --rule: #2B3941;
+      --rule-soft: #22303A;
+      --accent: #5FC4BE;
+      --accent-soft: #163A3A;
+      --money: #E3AA52;
+      --money-soft: #3A2E17;
+      --warn: #E08A7B;
+      --code-bg: #1E2A31;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #121A1F;
+    --surface: #182229;
+    --ink: #E4EBE9;
+    --ink-2: #C3CDCA;
+    --muted: #94A2A0;
+    --rule: #2B3941;
+    --rule-soft: #22303A;
+    --accent: #5FC4BE;
+    --accent-soft: #163A3A;
+    --money: #E3AA52;
+    --money-soft: #3A2E17;
+    --warn: #E08A7B;
+    --code-bg: #1E2A31;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .page { max-width: 1040px; margin: 0 auto; padding: 48px 24px 96px; }
+  .prose { max-width: 700px; }
+
+  /* Header */
+  header.doc { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(34px, 5vw, 48px); line-height: 1.08; margin: 0 0 14px; text-wrap: balance; letter-spacing: -0.01em; }
+  .dek { font-size: 19px; line-height: 1.5; color: var(--ink-2); max-width: 720px; margin: 0 0 22px; text-wrap: pretty; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .meta b { color: var(--ink-2); font-weight: 500; }
+  .status { display: inline-block; padding: 1px 8px; border: 1px solid var(--money); color: var(--money); border-radius: 3px; font-weight: 500; }
+
+  /* Sections */
+  section { margin: 0 0 56px; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 27px; line-height: 1.2; margin: 0 0 16px; text-wrap: balance; display: flex; align-items: baseline; gap: 14px; }
+  h2 .n { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--accent); letter-spacing: 0.04em; }
+  h3 { font-family: var(--sans); font-weight: 600; font-size: 16.5px; margin: 28px 0 8px; }
+  p { margin: 0 0 14px; text-wrap: pretty; }
+  .prose p, .prose li { max-width: 68ch; }
+  ul, ol { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 6px; }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+  pre { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; background: var(--code-bg); border: 1px solid var(--rule-soft); padding: 16px 18px; border-radius: 4px; overflow-x: auto; margin: 0 0 18px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  blockquote { margin: 0 0 18px; padding: 4px 0 4px 18px; border-left: 3px solid var(--accent); color: var(--ink-2); font-family: var(--serif); font-size: 18px; line-height: 1.5; max-width: 66ch; }
+  blockquote cite { display: block; font-family: var(--mono); font-size: 12px; color: var(--muted); font-style: normal; margin-top: 8px; }
+
+  .callout { border: 1px solid var(--rule); border-left: 3px solid var(--money); background: var(--surface); padding: 14px 18px; border-radius: 4px; margin: 18px 0 22px; max-width: 760px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout.legal { border-left-color: var(--warn); }
+  .lead { font-size: 17.5px; color: var(--ink-2); }
+
+  /* Figures */
+  figure { margin: 26px 0 30px; }
+  figure svg { max-width: 100%; height: auto; display: block; color: var(--ink); }
+  figcaption { font-size: 13.5px; color: var(--muted); margin-top: 10px; max-width: 76ch; line-height: 1.5; }
+  .fig-wide { overflow-x: auto; }
+  .fig-wide svg { min-width: 640px; }
+  .fig-frame { background: var(--surface); border: 1px solid var(--rule-soft); border-radius: 4px; padding: 18px 16px 10px; }
+
+  /* Tables */
+  .tablewrap { overflow-x: auto; margin: 16px 0 24px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; line-height: 1.45; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); }
+  th { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--rule); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13.5px; white-space: nowrap; }
+  td:first-child { font-weight: 500; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 11.5px; padding: 1px 7px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+  .tag.money { background: var(--money-soft); color: var(--money); }
+  .tag.gap { background: transparent; border: 1px dashed var(--rule); color: var(--muted); }
+
+  /* Exposure ledger */
+  .ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 18px 0 24px; }
+  .ledger > div { background: var(--surface); border: 1px solid var(--rule-soft); border-radius: 4px; padding: 14px 16px; }
+  .ledger .k { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .ledger .v { font-family: var(--serif); font-size: 20px; font-weight: 600; line-height: 1.25; margin-bottom: 6px; color: var(--ink); }
+  .ledger .d { font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+
+  footer.doc { border-top: 1px solid var(--rule); padding-top: 22px; margin-top: 30px; font-size: 13.5px; color: var(--muted); }
+  footer.doc ul { padding-left: 18px; }
+  footer.doc li { margin-bottom: 4px; }
+
+  @media (max-width: 640px) {
+    .page { padding: 32px 16px 64px; }
+    h2 { font-size: 23px; }
+    .dek { font-size: 17px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="page">
+<header class="doc">
+  <p class="eyebrow">Design note · Interledger × Evernode</p>
+  <h1>Nomad Connector</h1>
+  <p class="dek">An Interledger connector that runs as a HotPocket contract on Evernode: nobody operates it, peers pay for it as they use it, and it pays its own hosts in EVR from a Xahau account only the cluster can sign for.</p>
+  <div class="meta">
+    <span><span class="status">prototype</span></span>
+    <span>date <b>2 September 2026</b></span>
+    <span>code <b>nomad-connector.zip</b> (contract · plugin · simulator · 17 tests)</span>
+    <span>origin <b>forum.interledger.org/t/126</b>, March 2019</span>
+  </div>
+</header>
+
+<section class="prose" id="summary">
+  <h2><span class="n">§1</span>Summary</h2>
+  <p class="lead">The 2019 idea is buildable in 2026, and the half of it that sounded hardest — a contract with no operator that keeps itself hosted — is the half Evernode has already solved. What remains hard is that a connector is custodial, and that the law has moved from "is it decentralised?" to "who has control?".</p>
+  <p>This note describes a working prototype: a deterministic ILP connector core that runs unchanged on a simulated three-node HotPocket cluster, an <code>ilp-plugin-hotpocket</code> that lets the unmodified <code>ilp-protocol-stream</code> library pay through it, a settlement design built on Xahau payment channels and the cluster's multisig account, and a treasury loop that keeps the hosts paid in EVR. A production bridge to Xahau is written against everpocket's real API and exercised through a fake; it has not yet been run on a live Evernode cluster.</p>
+  <p>Recommendation: treat this as an alternative ILP network for crypto-native peers, not as a node on the Interledger Foundation's Rafiki network; engineer every remaining design decision around the "non-controlling" test now in front of the U.S. Senate; and take the next step on Xahau testnet with three real hosts before adding liquidity providers or a second asset.</p>
+</section>
+
+<section class="prose" id="vision">
+  <h2><span class="n">§2</span>The vision, and what changed since 2019</h2>
+  <blockquote>It seems to me that connectors are necessarily money service businesses, but AML requirements would make running a connector almost impossible. The obvious option (to me at least) is to have connectors run as decentralised contracts on codius or similar where no one party runs the contract, and all parties who use it pay for it as they use it, and it in turn pays for its own resource usage.<cite>codetsunami, “What is the incentive for running a connector?”, Interledger forum, 7 March 2019</cite></blockquote>
+  <p>Three things are different now. Codius is gone and Evernode has taken its place: a HotPocket cluster can own a Xahau account outright, with one signer key per node kept outside consensus state and an 80 %-weight quorum on the account's SignerList, and everpocket's <em>Nomad</em> cluster model lets "the DApp itself completely take control of managing the cluster" — buying, extending and replacing its own leases from that account. That is the second half of the quotation, almost verbatim.</p>
+  <p>Interledger went the other way. The network in 2026 is Rafiki and Open Payments: bilateral peering between regulated account-servicing entities, negotiated settlement, shared auth tokens. A compliance team at such an entity has no counterparty to diligence when the other side is a contract. So a decentralised connector serves a different market than the one the forum post imagined: wallets and services on XRPL and Xahau that already settle in crypto and do not need a legal person across the table.</p>
+  <p>And the law moved. "No one party runs it" is no longer the test anyone applies; control is. §8 takes that up.</p>
+</section>
+
+<section id="architecture">
+  <h2><span class="n">§3</span>Architecture</h2>
+  <div class="prose">
+    <p>The connector is a hub. HotPocket contracts cannot deterministically open outbound connections, so every peer connects in over the HotPocket user channel, authenticated by its own ed25519 key; that key is the peer's identity and the tail of its ILP address. The cluster's nodes run the same deterministic core each consensus round, vote over the node-party-line (NPL) on anything they had to observe from outside, and co-sign the transactions the core decided on.</p>
+  </div>
+  <figure class="fig-wide">
+    <div class="fig-frame">
+    <svg viewBox="0 0 960 470" role="img" aria-label="Peers connect into a HotPocket cluster of three nodes over the user channel; the nodes vote over NPL and run one deterministic core; the cluster co-signs transactions on its Xahau multisig account, redeems incoming payment channels, pays peers out, buys EVR on the DEX and pays Evernode hosts for its own leases.">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"></path>
+        </marker>
+        <marker id="arr-money" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#B06E12"></path>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" font-size="12" fill="currentColor">
+
+        <!-- Peers -->
+        <rect x="20" y="70" width="150" height="64" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+        <text x="95" y="96" text-anchor="middle" font-weight="600">Alice</text>
+        <text x="95" y="114" text-anchor="middle" font-size="11" opacity="0.75">ilp-plugin-hotpocket</text>
+
+        <rect x="20" y="300" width="150" height="64" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+        <text x="95" y="326" text-anchor="middle" font-weight="600">Bob</text>
+        <text x="95" y="344" text-anchor="middle" font-size="11" opacity="0.75">ilp-plugin-hotpocket</text>
+
+        <!-- Cluster -->
+        <rect x="270" y="30" width="360" height="400" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4"></rect>
+        <text x="450" y="54" text-anchor="middle" font-weight="600">Nomad Connector cluster (Evernode)</text>
+
+        <rect x="290" y="76" width="96" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+        <text x="338" y="95" text-anchor="middle" font-size="11.5">node 1</text>
+        <text x="338" y="111" text-anchor="middle" font-size="10.5" opacity="0.75">signer key</text>
+        <rect x="402" y="76" width="96" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+        <text x="450" y="95" text-anchor="middle" font-size="11.5">node 2</text>
+        <text x="450" y="111" text-anchor="middle" font-size="10.5" opacity="0.75">signer key</text>
+        <rect x="514" y="76" width="96" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+        <text x="562" y="95" text-anchor="middle" font-size="11.5">node 3</text>
+        <text x="562" y="111" text-anchor="middle" font-size="10.5" opacity="0.75">signer key</text>
+
+        <!-- NPL between nodes -->
+        <line x1="386" y1="99" x2="402" y2="99" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)" marker-start="url(#arr)"></line>
+        <line x1="498" y1="99" x2="514" y2="99" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)" marker-start="url(#arr)"></line>
+        <text x="450" y="142" text-anchor="middle" font-size="11" opacity="0.8">NPL votes: ledger facts, tx results, signatures</text>
+
+        <!-- Core -->
+        <rect x="290" y="166" width="320" height="120" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+        <text x="450" y="188" text-anchor="middle" font-weight="600">deterministic core · one round</text>
+        <text x="450" y="210" text-anchor="middle" font-size="11.5">facts → sweep expiries → peer inputs → plan</text>
+        <text x="450" y="232" text-anchor="middle" font-size="11" opacity="0.8">peer balances · in-flight packets · channels &amp; claims</text>
+        <text x="450" y="250" text-anchor="middle" font-size="11" opacity="0.8">payout queue · treasury</text>
+        <text x="450" y="272" text-anchor="middle" font-size="11" opacity="0.8">state hash agreed by all nodes</text>
+
+        <!-- nodes -> core -->
+        <line x1="450" y1="122" x2="450" y2="166" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)"></line>
+
+        <!-- intents -->
+        <rect x="290" y="318" width="320" height="86" rx="3" fill="none" stroke="#B06E12" stroke-width="1.3"></rect>
+        <text x="450" y="340" text-anchor="middle" font-weight="600" fill="#B06E12">intents, multisigned by the nodes</text>
+        <text x="450" y="362" text-anchor="middle" font-size="11.5">PaymentChannelClaim · Payment · OfferCreate</text>
+        <text x="450" y="382" text-anchor="middle" font-size="11.5">lease extend / acquire (everpocket Nomad)</text>
+        <line x1="450" y1="286" x2="450" y2="318" stroke="#B06E12" stroke-width="1.2" marker-end="url(#arr-money)"></line>
+
+        <!-- Peers <-> cluster arrows -->
+        <line x1="170" y1="92" x2="290" y2="92" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)"></line>
+        <text x="230" y="84" text-anchor="middle" font-size="10.5">Prepare · claims</text>
+        <line x1="290" y1="112" x2="170" y2="112" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)"></line>
+        <text x="230" y="128" text-anchor="middle" font-size="10.5">Fulfill / Reject</text>
+
+        <line x1="170" y1="322" x2="290" y2="322" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)"></line>
+        <text x="230" y="314" text-anchor="middle" font-size="10.5">Fulfill · settle_to</text>
+        <line x1="290" y1="342" x2="170" y2="342" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)"></line>
+        <text x="230" y="358" text-anchor="middle" font-size="10.5">forwarded Prepare</text>
+
+        <text x="230" y="220" text-anchor="middle" font-size="10.5" opacity="0.7">HotPocket user channel</text>
+        <text x="230" y="234" text-anchor="middle" font-size="10.5" opacity="0.7">(wss, ed25519-signed inputs)</text>
+
+        <!-- Xahau -->
+        <rect x="720" y="30" width="220" height="250" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+        <text x="830" y="54" text-anchor="middle" font-weight="600">Xahau ledger</text>
+        <rect x="738" y="72" width="184" height="60" rx="3" fill="none" stroke="#B06E12" stroke-width="1.3"></rect>
+        <text x="830" y="93" text-anchor="middle" font-size="11.5" fill="#B06E12" font-weight="600">multisig account</text>
+        <text x="830" y="110" text-anchor="middle" font-size="10.5" opacity="0.8">1 signer key per node · 80 % quorum</text>
+        <text x="830" y="123" text-anchor="middle" font-size="10.5" opacity="0.8">holds XAH float + EVR trust line</text>
+
+        <rect x="738" y="148" width="184" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+        <text x="830" y="167" text-anchor="middle" font-size="11.5">payment channels → account</text>
+        <text x="830" y="184" text-anchor="middle" font-size="10.5" opacity="0.8">opened by peers, claims signed off-ledger</text>
+
+        <rect x="738" y="210" width="184" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+        <text x="830" y="229" text-anchor="middle" font-size="11.5">DEX: XAH ⇄ EVR</text>
+        <text x="830" y="246" text-anchor="middle" font-size="10.5" opacity="0.8">immediate-or-cancel top-ups</text>
+
+        <!-- cluster -> xahau -->
+        <line x1="610" y1="361" x2="700" y2="361" stroke="#B06E12" stroke-width="1.2"></line>
+        <line x1="700" y1="361" x2="700" y2="102" stroke="#B06E12" stroke-width="1.2"></line>
+        <line x1="700" y1="102" x2="738" y2="102" stroke="#B06E12" stroke-width="1.2" marker-end="url(#arr-money)"></line>
+        <text x="655" y="353" text-anchor="middle" font-size="10.5" fill="#B06E12">submit</text>
+
+        <!-- xahau -> nodes (observe) -->
+        <line x1="720" y1="171" x2="640" y2="171" stroke="currentColor" stroke-width="1.1"></line>
+        <line x1="640" y1="171" x2="640" y2="99" stroke="currentColor" stroke-width="1.1"></line>
+        <line x1="640" y1="99" x2="610" y2="99" stroke="currentColor" stroke-width="1.1" marker-end="url(#arr)"></line>
+        <text x="672" y="163" text-anchor="middle" font-size="10.5">each node observes</text>
+
+        <!-- Hosts -->
+        <rect x="720" y="318" width="220" height="86" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+        <text x="830" y="342" text-anchor="middle" font-weight="600">Evernode hosts</text>
+        <text x="830" y="362" text-anchor="middle" font-size="11">run the three nodes under leases</text>
+        <text x="830" y="380" text-anchor="middle" font-size="11" opacity="0.8">paid per moment in EVR</text>
+        <line x1="830" y1="280" x2="830" y2="318" stroke="#B06E12" stroke-width="1.2" marker-end="url(#arr-money)"></line>
+        <text x="866" y="304" text-anchor="start" font-size="10.5" fill="#B06E12">EVR</text>
+
+        <!-- peers -> xahau channel note: routed around the right so it crosses nothing -->
+        <line x1="95" y1="364" x2="95" y2="440" stroke="currentColor" stroke-width="1" stroke-dasharray="3 4"></line>
+        <line x1="95" y1="440" x2="952" y2="440" stroke="currentColor" stroke-width="1" stroke-dasharray="3 4"></line>
+        <line x1="952" y1="440" x2="952" y2="171" stroke="currentColor" stroke-width="1" stroke-dasharray="3 4"></line>
+        <line x1="952" y1="171" x2="942" y2="171" stroke="currentColor" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#arr)"></line>
+        <text x="460" y="456" text-anchor="middle" font-size="10.5" opacity="0.8">peers open payment channels to the multisig account and receive payouts from it — ordinary single-signed Xahau transactions on their side</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>Everything a peer does is a normal ILP or Xahau action; everything the connector does on-ledger is a transaction the nodes had to agree on first and then co-sign. The dashed line at the bottom is the only relationship peers have with the ledger: their own channels in, their own payouts out.</figcaption>
+  </figure>
+  <div class="prose">
+    <h3>Components</h3>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>Part</th><th>What it is</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>contract core</td><td>Pure state machine: <code>processRound(state, config, roundInput)</code>. ILP Prepare/Fulfill/Reject per RFC-27, ILDCP, per-peer balances, claims, expiry sweep, settlement planning.</td><td><span class="tag">tested</span></td></tr>
+        <tr><td>round runner</td><td>Glue between a HotPocket context (real or simulated) and the core: read inputs, ask the bridge for facts, run the core, submit intents, deliver outputs, persist state.</td><td><span class="tag">tested</span></td></tr>
+        <tr><td>ilp-plugin-hotpocket</td><td>The <code>ilp-plugin</code> interface (<code>sendData</code>, data handler) over the HotPocket user channel, plus <code>sendClaim</code> / <code>setPayoutAddress</code>. Works with <code>hotpocket-js-client</code> or the simulator.</td><td><span class="tag">tested</span></td></tr>
+        <tr><td>Xahau bridge</td><td>everpocket wiring: VoteContext over NPL, XrplContext for multisign-and-submit, NomadContext for leases. Observations become facts only after a vote.</td><td><span class="tag money">written, run against a fake</span></td></tr>
+        <tr><td>simulator</td><td>N in-process HotPocket instances per round with real NPL semantics, state-hash comparison after every round, mock Xahau with channels, claim verification, multisig idempotency, DEX and leases.</td><td><span class="tag">tested</span></td></tr>
+        <tr><td>deployment</td><td><code>hpdevkit deploy dist -m -s</code> for a local multisig cluster; <code>evdevkit cluster-create … --signer-count</code> for Evernode.</td><td><span class="tag gap">documented, not run</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</section>
+
+<section id="packet">
+  <h2><span class="n">§4</span>A packet through the cluster</h2>
+  <div class="prose">
+    <p>HotPocket batches inputs into rounds, so a packet crossing the connector costs two rounds at minimum: the Prepare arrives in one round and is forwarded in that round's outputs; the Fulfill arrives in a later round and the reply goes back in that round's outputs. Expiry is judged against the consensus timestamp, never a node's clock, and the outgoing packet expires one window earlier than the incoming one so the connector is never left holding a fulfilled outgoing packet with an expired incoming one.</p>
+  </div>
+  <figure class="fig-wide">
+    <div class="fig-frame">
+    <svg viewBox="0 0 960 330" role="img" aria-label="Timeline of one ILP packet across consensus rounds: in round n Alice's Prepare arrives and the connector holds her funds and forwards a smaller Prepare to Bob with an earlier expiry; in round n+1 Bob's Fulfill arrives, the connector credits Bob minus the fee and forwards the Fulfill to Alice; if no Fulfill arrives before the outgoing expiry the sweep at the start of a later round refunds Alice with an R00 reject.">
+      <g font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" font-size="12" fill="currentColor">
+        <!-- lanes -->
+        <text x="20" y="74" font-weight="600">Alice</text>
+        <text x="20" y="164" font-weight="600">cluster</text>
+        <text x="20" y="254" font-weight="600">Bob</text>
+        <line x1="100" y1="70" x2="940" y2="70" stroke="currentColor" stroke-width="1" opacity="0.35"></line>
+        <line x1="100" y1="160" x2="940" y2="160" stroke="currentColor" stroke-width="1" opacity="0.35"></line>
+        <line x1="100" y1="250" x2="940" y2="250" stroke="currentColor" stroke-width="1" opacity="0.35"></line>
+
+        <!-- round ticks -->
+        <g font-family="IBM Plex Mono, Menlo, monospace" font-size="11">
+          <line x1="180" y1="40" x2="180" y2="290" stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"></line>
+          <text x="180" y="30" text-anchor="middle">round n</text>
+          <line x1="470" y1="40" x2="470" y2="290" stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"></line>
+          <text x="470" y="30" text-anchor="middle">round n+1</text>
+          <line x1="760" y1="40" x2="760" y2="290" stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"></line>
+          <text x="760" y="30" text-anchor="middle">round n+k</text>
+          <text x="760" y="312" text-anchor="middle" opacity="0.8">consensus time &gt; T − w</text>
+        </g>
+
+        <!-- Round n: Prepare in -->
+        <line x1="150" y1="78" x2="180" y2="152" stroke="currentColor" stroke-width="1.3" marker-end="url(#arr)"></line>
+        <text x="118" y="112" text-anchor="end" font-size="11">Prepare 1.000 XAH</text>
+        <text x="118" y="126" text-anchor="end" font-size="10.5" opacity="0.8">expires T</text>
+        <!-- core action -->
+        <rect x="186" y="132" width="196" height="56" rx="3" fill="none" stroke="#B06E12" stroke-width="1.2"></rect>
+        <text x="284" y="150" text-anchor="middle" font-size="11" fill="#B06E12">hold Alice −1.000 (held +1.000)</text>
+        <text x="284" y="166" text-anchor="middle" font-size="11" fill="#B06E12">fee 25 bps = 0.0025</text>
+        <text x="284" y="181" text-anchor="middle" font-size="10.5" opacity="0.8">pending n17: A→B, cond, T−w</text>
+        <!-- forward to Bob -->
+        <line x1="382" y1="170" x2="440" y2="244" stroke="currentColor" stroke-width="1.3" marker-end="url(#arr)"></line>
+        <text x="420" y="268" text-anchor="middle" font-size="11">Prepare 0.9975 XAH</text>
+        <text x="420" y="282" text-anchor="middle" font-size="10.5" opacity="0.8">expires T − w</text>
+
+        <!-- Round n+1: Fulfill from Bob -->
+        <line x1="500" y1="242" x2="530" y2="168" stroke="currentColor" stroke-width="1.3" marker-end="url(#arr)"></line>
+        <text x="548" y="268" text-anchor="start" font-size="11">Fulfill (preimage of cond)</text>
+        <rect x="536" y="104" width="190" height="56" rx="3" fill="none" stroke="#B06E12" stroke-width="1.2"></rect>
+        <text x="631" y="122" text-anchor="middle" font-size="11" fill="#B06E12">Bob +0.9975 · fees +0.0025</text>
+        <text x="631" y="138" text-anchor="middle" font-size="11" fill="#B06E12">Alice held −1.000</text>
+        <text x="631" y="153" text-anchor="middle" font-size="10.5" opacity="0.8">only if time ≤ T − w</text>
+        <line x1="620" y1="104" x2="650" y2="78" stroke="currentColor" stroke-width="1.3" marker-end="url(#arr)"></line>
+        <text x="660" y="62" text-anchor="start" font-size="11">Fulfill → Alice</text>
+
+        <!-- Round n+k: expiry sweep -->
+        <rect x="766" y="132" width="170" height="44" rx="3" fill="none" stroke="currentColor" stroke-width="1.1" stroke-dasharray="4 3"></rect>
+        <text x="851" y="150" text-anchor="middle" font-size="11">no Fulfill by T − w:</text>
+        <text x="851" y="166" text-anchor="middle" font-size="11">refund Alice, drop pending</text>
+        <line x1="800" y1="132" x2="800" y2="80" stroke="currentColor" stroke-width="1.3" marker-end="url(#arr)"></line>
+        <text x="808" y="100" text-anchor="start" font-size="11">Reject R00</text>
+        <text x="808" y="114" text-anchor="start" font-size="10.5" opacity="0.8">(late Fulfill ignored)</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>One packet, two rounds. The amber boxes are the only places balances change, and each is a deterministic function of the agreed inputs. The sweep runs before inputs in every round, so a Fulfill that lands after the outgoing expiry finds nothing to fulfil.</figcaption>
+  </figure>
+  <div class="prose">
+    <h3>Latency budget</h3>
+    <p>With the example config (3 s rounds, 8 s minimum window) a packet round-trip is roughly 6–9 s and a STREAM packet with the library's default 30 s expiry clears the connector's <code>expiresAt &gt; now + 2w</code> check with room to spare. The simulator runs 25–40 ms rounds, which is why the demo pays 2.5 XAH end to end in about 250 ms; on real hosts, throughput comes from the hundreds of packets a round can carry, not from per-packet speed. The tests confirm the mechanics rather than the timing: same code, faster clock.</p>
+    <p>Rounds that touch the ledger take longer, because each node queries Xahau and the cluster votes. The bridge only does that every <code>factsEvery</code> rounds or when a settlement is pending, so packet-only rounds stay short.</p>
+  </div>
+</section>
+
+<section id="money">
+  <h2><span class="n">§5</span>Money model</h2>
+  <div class="prose">
+    <p>The design refuses to lend. A peer funds itself by opening a Xahau payment channel <em>to</em> the connector's multisig account and streaming signed claims; the contract verifies each claim with pure crypto (every node reaches the same verdict without asking the ledger), credits it immediately, and redeems channels on-ledger in batches — or the moment a channel's owner starts closing it, because an unredeemed claim on a closed channel is a loss. Fulfilled packets move value between peer balances minus the fee. When a peer is owed more than a threshold, or asks, the cluster multisigns a Payment to the address the peer registered — but only from funds already on the ledger; unredeemed claims never back a payout.</p>
+  </div>
+  <div class="ledger">
+    <div><div class="k">peer's exposure to the connector</div><div class="v">≤ payout threshold + one round</div><div class="d">The most a peer can be owed is what accrues between payouts. Default 5 XAH; a peer can call <code>withdraw</code> at 1 XAH.</div></div>
+    <div><div class="k">connector's exposure to a peer</div><div class="v">0.01 XAH</div><div class="d">A probe credit so unfunded receivers can run STREAM's rate probes. Everything else is prepaid through claims.</div></div>
+    <div><div class="k">custodial pool at risk</div><div class="v">float + unredeemed claims</div><div class="d">What a compromised quorum of signers could take. Keep the float small; redeem early; set the reserve above the account minimum.</div></div>
+    <div><div class="k">who pays for hosting</div><div class="v">fees, in XAH → EVR</div><div class="d">The treasury keeps ≥ 20 EVR, buying on the Xahau DEX from free equity only: balance − reserve − liabilities.</div></div>
+  </div>
+  <div class="prose">
+    <h3>Why channels in, plain payments out</h3>
+    <p>Inbound channels are ideal: the peer signs claims with its own key and the contract only ever holds signatures, which the cluster can redeem with a normal multisigned <code>PaymentChannelClaim</code>. Outbound channels would be better than plain payments — instant, no per-payout fee — but a channel's claims must be signed by a single key, and the cluster deliberately has no single key. Threshold signatures (a FROST-style ed25519 scheme across the nodes) would close that gap; until then, outbound settlement is a batched multisigned <code>Payment</code>.</p>
+    <p>Claims are bound to the first peer that presents them, a channel's settle delay must be at least an hour before its claims are accepted, and funds the owner pushes on-ledger directly are credited once by fast-forwarding the claim watermark, never double-counted. All three rules have tests.</p>
+  </div>
+</section>
+
+<section class="prose" id="determinism">
+  <h2><span class="n">§6</span>Determinism and the fact pipeline</h2>
+  <p>HotPocket reaches consensus on users, inputs, outputs and the state hash. The contract therefore has to be a pure function of what the cluster agreed on, and anything a node learns on its own — the account balance, which channels exist, whether a transaction validated — must go through a vote before it can touch state. The core never reads a clock, never opens a socket and never uses randomness; the bridge does all of that, and returns <em>facts</em> only after an NPL election picks the majority view (ties broken by hash, so every node picks the same one).</p>
+  <p>The same discipline applies on the way out. The core emits <em>intents</em> — transactions it wants signed — and everpocket's <code>multiSignAndSubmitTransaction</code> decides the sequence number by vote, collects the signer nodes' signatures over NPL, has one node submit, and votes the result back so every node applies the same outcome. A payout is debited when it is planned, refunded if submission fails, and confirmed only when a later round's facts show it validated.</p>
+  <p>The simulator enforces the property the platform would: after every round it hashes each node's state directory and compares outputs; the first disagreement stops the cluster. One test tampers with a node's state file on purpose and checks that the fork is caught; the others, including the STREAM payment and the fake-everpocket bridge run, finish with no fork across all rounds.</p>
+  <p>One caveat belongs here. everpocket keeps its own bookkeeping (<code>transactions.json</code>, cluster data) in consensus state, and writes it from per-node ledger queries without a vote. The connector's state cannot diverge through that path, but a node whose everpocket files diverge will still fall out of sync. It is the kind of thing a testnet run will surface.</p>
+</section>
+
+<section class="prose" id="selffunding">
+  <h2><span class="n">§7</span>The self-funding loop</h2>
+  <p>Evernode hosts are paid per moment (about an hour) in EVR, and a lease that is not extended ends with the instance. everpocket's <code>NomadContext</code> already implements the loop the forum post asked for: each round it prunes nodes that went quiet, grows the cluster back to its target size by acquiring leases from preferred hosts, and extends leases that are within a randomised margin of expiry — all paid from the multisig account, with signer keys added or replaced on the SignerList as nodes come and go.</p>
+  <p>The connector's part is to keep that account in EVR. Fees accrue in XAH; when the EVR balance drops under the reserve and there is free equity (on-ledger balance minus the reserve minus everything owed to peers), the treasury places an immediate-or-cancel offer on the Xahau DEX to buy EVR, and backs off for twenty rounds if the book cannot fill it at the limit price. In the simulated run the cluster pays three hosts 24 EVR for lease extensions and then restores its reserve from fees. On mainnet that DEX depth is an assumption to verify.</p>
+  <p>Nothing in the loop needs a person. That is the point, and it is also the part that raises the question in the next section.</p>
+</section>
+
+<section class="prose" id="control">
+  <h2><span class="n">§8</span>Control, not decentralisation</h2>
+  <p>"No one party runs the contract" was a fair summary of the 2019 hope. Since then Roman Storm was convicted (August 2025) of conspiracy to operate an unlicensed money-transmitting business over non-custodial software, with a retrial of the deadlocked counts scheduled for October 2026; the government's theory turned on what the developers still controlled and profited from. Going the other way, the Blockchain Regulatory Certainty Act (Lummis/Wyden, January 2026; also §604 of the CLARITY Act, which passed the House in July 2025, cleared Senate Banking in May 2026 and faces a Senate vote this month) would exempt a "non-controlling developer or provider": someone without "the legal right or unilateral ability to control, initiate, or effectuate transactions involving users' digital assets without third-party approval."</p>
+  <p>That definition is a design specification. The table below maps it onto the prototype.</p>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Actor</th><th>Can they move users' funds alone?</th><th>Design property that makes it so</th></tr></thead>
+    <tbody>
+      <tr><td>developer / deployer</td><td>no, once the tenant key is retired</td><td>No admin message in the protocol, no runtime parameter change, no upgrade path. The tenant account that created the cluster must drop its master key after the SignerList is set — a deployment step, and the biggest residual risk if skipped.</td></tr>
+      <tr><td>one host / one node</td><td>no</td><td>One signer key of weight 1 against an 80 % quorum; the only transactions it sees are ones consensus produced, and it cannot originate one.</td></tr>
+      <tr><td>a quorum of hosts</td><td>yes, by colluding</td><td>This is the custodial risk of §5. Mitigations are economic (small float, early redemption, host diversity), not structural.</td></tr>
+      <tr><td>peers</td><td>only their own</td><td>Claims signed by the peer, payouts to the address the peer registered, balances that nobody else can spend.</td></tr>
+      <tr><td>liquidity providers (future)</td><td>no</td><td>Any LP design must give LPs withdrawal rights over their share and nothing else, or it reintroduces a controlling party.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="callout legal">
+    <p>Mapping the design onto a statutory definition is engineering hygiene, not a legal opinion, and the definition is not yet law. Two further points stand regardless: the hosts are closer to the money than a cloud provider is (they hold signing keys), and the peers, not the contract, are where any obligation to know a counterparty lands. Anyone taking this beyond a testnet should get advice from a lawyer who has read the Storm rulings and the BRCA text.</p>
+  </div>
+</section>
+
+<section id="threats">
+  <h2><span class="n">§9</span>Threat model</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Threat</th><th>Handled by</th><th>Residual</th></tr></thead>
+    <tbody>
+      <tr><td>Peer sends packets it cannot pay for</td><td>Prepaid balances; T04 above balance + 0.01 XAH probe credit; holds released on reject or expiry.</td><td>0.01 XAH per peer.</td></tr>
+      <tr><td>Peer reuses or forges a claim</td><td>Cumulative amounts, monotonic per channel; signature checked against the channel's on-ledger public key; bound to first presenter; funding cap.</td><td>None known.</td></tr>
+      <tr><td>Channel owner closes with claims unredeemed</td><td>Redeem the moment <code>Expiration</code> appears; refuse channels with settle delay under an hour; redeem on threshold anyway.</td><td>A cluster outage longer than the settle delay loses the unredeemed part.</td></tr>
+      <tr><td>Late or wrong Fulfill</td><td>Sweep before inputs; consensus timestamp; condition check; wrong fulfillment leaves the packet pending until expiry.</td><td>None; matches ilp-connector behaviour.</td></tr>
+      <tr><td>Node observes a different ledger state</td><td>Facts are a majority vote over NPL; intents' results are voted by everpocket.</td><td>Vote timeouts under partition can still desync a node; HotPocket re-syncs it from the majority.</td></tr>
+      <tr><td>Signer quorum collusion or key theft</td><td>Small float, early redemption, reserve, payout thresholds.</td><td>The pool. Host diversity and a bond/insurance scheme are open questions.</td></tr>
+      <tr><td>Payout double-spend after a failed submit</td><td>Debit at plan time; refund only on a definitive failure (rejected submit, tec result, LastLedgerSequence passed).</td><td>A stuck "submitted" payout waits rather than refunds — safe, but needs an operator-free retry policy.</td></tr>
+      <tr><td>State bloat / key-spam peers</td><td>Peer cap; idle peers with nothing owed pruned every 100 rounds; input size limits.</td><td>Per-round CPU under a flood; HotPocket's round limits are the backstop.</td></tr>
+      <tr><td>Route hijack</td><td>No route announcements; the only routes are the connector's own peers by public key.</td><td>No multi-hop routing yet.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="evidence">
+  <h2><span class="n">§10</span>What the prototype shows</h2>
+  <div class="prose">
+    <p>Seventeen tests: eleven on the core (packets, fees, expiry, rejection codes, claims, redemptions, payouts, treasury, read requests, malformed input), a three-node simulator run with settlement and lease payments, a deliberate fork, the production bridge driven through a fake everpocket, and an unmodified <code>ilp-protocol-stream</code> payment from Alice to Bob. The demo below is one run of <code>npm run demo</code>.</p>
+  </div>
+<pre><code>== Nomad Connector demo ==
+cluster: 3 HotPocket nodes, 40 ms rounds
+multisig account rNomadConnectorMultisigAccount1234: 50.000000 XAH, 30 EVR
+fee 25 bps, ILP prefix g.nomad
+
+Alice rDneppzU9WfK7Y1iPxHwj7PxQxmsgVhBRa opens a 5 XAH payment channel to the connector: CAD4FE62F2BB…
+Alice sends a signed claim for 3 XAH -> connector: accepted, balance 3.000000 XAH
+Bob's STREAM address: g.nomad.ed3f1aa69ecc8f70f0562bdc21b8c06d…
+  [connector -> Bob] payout submitted: 2.492749 XAH tx D5E28F880289…
+  [connector -> Bob] payout validated: 2.492749 XAH tx D5E28F880289…
+
+Alice paid Bob 2.500000 XAH over ILP/STREAM in 253 ms; Bob received 2.493750 XAH (fees 0.006250 XAH)
+connector balances: Alice 0.500000 XAH, Bob 0.001001 XAH
+
+Settling…
+Alice's channel redeemed on-ledger: 3.000000 XAH claimed of 5.000000 XAH
+Bob's Xahau account rBobPayoutAddress1111111111111111: 2.492749 XAH
+connector multisig account: 50.507227 XAH
+
+Fast-forwarding the hosts' leases to near expiry…
+hosts paid in EVR by the cluster itself: 8, 8, 8 (leases extended 4 moments each)
+treasury EVR 30 -> 22 after paying hosts and buying EVR with XAH fees on the DEX
+ledger log: PaymentChannelClaim:tesSUCCESS, Payment:tesSUCCESS, Payment:tesSUCCESS, Payment:tesSUCCESS,
+            Payment:tesSUCCESS, OfferCreate:tesSUCCESS, OfferCreate:tesSUCCESS
+
+consensus forks: none across 32 rounds on 3 nodes</code></pre>
+  <div class="prose">
+    <p>Bob's 0.001001 XAH left at the connector is not a rounding error: his own STREAM rate probes were in flight when the payout was planned, so those drops were held and returned after it. The mock ledger, the DEX price and the lease economics are stand-ins; the packet handling, claim verification, multisig idempotency and vote logic are the real code paths.</p>
+  </div>
+</section>
+
+<section class="prose" id="next">
+  <h2><span class="n">§11</span>Open questions and next steps</h2>
+  <h3>Before anyone relies on it</h3>
+  <ul>
+    <li><strong>Run it for real.</strong> A three-host cluster on Xahau testnet through <code>evdevkit cluster-create --signer-count 3</code>, the tenant key retired, one peer funding through a real channel. This is where everpocket's rough edges, round timing and DEX assumptions get measured instead of assumed.</li>
+    <li><strong>Liquidity providers.</strong> Fees alone make the float grow slowly. An LP deposit with shares and withdrawal rights — and nothing else — keeps the control posture intact; anything resembling governance rights over the pool does not.</li>
+    <li><strong>Outbound channels.</strong> Threshold ed25519 signing across the nodes would let the cluster sign channel claims to peers, making payouts instant and fee-free.</li>
+    <li><strong>Upgrades.</strong> "No upgrade path" is the safest posture and the least practical one. Options are hash-pinned versions that peers opt into by reconnecting, or a migration message that moves balances to a successor contract the peers name — never an admin key.</li>
+  </ul>
+  <h3>Later</h3>
+  <ul>
+    <li>Multi-asset routing (XRP over XRPL, IOUs), which needs per-asset ledgers and an agreed rate source.</li>
+    <li>Multi-hop: letting a peer that is itself a connector announce prefixes, with the hijack problem solved by bonded announcements.</li>
+    <li>Host selection and diversity policy for the Nomad loop, and what a bond or insurance layer for the custodial pool would look like.</li>
+    <li>Receipts: STREAM receipts signed by the receiver would let peers audit the connector's fees without trusting it.</li>
+  </ul>
+</section>
+
+<footer class="doc">
+  <p>Sources consulted for this note (state of affairs as of 2 September 2026):</p>
+  <ul>
+    <li><a href="https://forum.interledger.org/t/what-is-the-incentive-for-running-a-connector/126/5">What is the incentive for running a connector? — Interledger forum, 2019</a></li>
+    <li><a href="https://docs.evernode.org/en/latest/sdk/hotpocket/tutorials/multisig.html">Evernode docs: Xahau transaction enabled cluster (multisig)</a> · <a href="https://github.com/EvernodeXRPL/evernode-docs/blob/main/docs/source/sdk/patterns/dapp-cluster-models.md">dApp cluster models (Nomad)</a> · <a href="https://docs.evernode.org/en/latest/sdk/hotpocket/tutorials/npl.html">NPL messaging</a> · <a href="https://docs.evernode.org/en/latest/sdk/evernode/evdevkit/overview.html">evdevkit</a></li>
+    <li><a href="https://github.com/EvernodeXRPL/everpocket-nodejs-contract">everpocket-nodejs-contract</a> (XrplContext, VoteContext, EvernodeContext, ClusterContext, NomadContext)</li>
+    <li><a href="https://rafiki.dev/integration/requirements/peers/">Rafiki: peers</a> — Interledger's 2026 peering model</li>
+    <li><a href="https://www.defieducationfund.org/u-s-v-storm-2026-update/">U.S. v. Storm, 2026 update (DeFi Education Fund)</a> · <a href="https://www.coindesk.com/policy/2025/08/06/roman-storm-guilty-of-unlicensed-money-transmitting-conspiracy-in-partial-verdict">partial verdict, August 2025</a></li>
+    <li><a href="https://www.lummis.senate.gov/press-releases/lummis-wyden-introduce-bipartisan-legislation-to-protect-blockchain-developers-from-money-transmitter-requirements">Blockchain Regulatory Certainty Act (S.3611), January 2026</a> · <a href="https://www.troutmanfinancialservices.com/2026/08/senate-adjourns-without-clarity-act-vote-but-september-vote-now-on-the-calendar/">CLARITY Act: September Senate vote</a></li>
+  </ul>
+</footer>
+</div>
