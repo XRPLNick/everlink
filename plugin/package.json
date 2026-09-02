@@ -1,0 +1,13 @@
+{
+  "name": "ilp-plugin-hotpocket",
+  "version": "0.1.0",
+  "description": "ILP plugin that speaks to a Nomad Connector cluster over the HotPocket user channel.",
+  "main": "src/index.js",
+  "license": "MIT",
+  "dependencies": {
+    "hotpocket-js-client": "0.5.7",
+    "ilp-packet": "3.1.4-alpha.2",
+    "ripple-binary-codec": "^2.10.0",
+    "ripple-keypairs": "^3.0.0"
+  }
+}

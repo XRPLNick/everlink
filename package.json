@@ -1,0 +1,22 @@
+{
+  "name": "nomad-connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An Interledger connector that runs as a self-funding HotPocket contract on Evernode (Xahau). Prototype.",
+  "license": "MIT",
+  "workspaces": [
+    "contract",
+    "plugin"
+  ],
+  "scripts": {
+    "test": "node --test --test-timeout=60000 test/*.test.js",
+    "test:core": "node --test test/core.test.js test/settlement.test.js",
+    "test:e2e": "node --test test/e2e-stream.test.js",
+    "demo": "node sim/demo.js",
+    "build:contract": "npm run build --workspace contract"
+  },
+  "devDependencies": {
+    "ilp-protocol-stream": "2.7.2-alpha.3",
+    "ilp-packet": "3.1.4-alpha.2"
+  }
+}

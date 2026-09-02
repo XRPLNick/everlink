@@ -1,0 +1,23 @@
+{
+  "name": "@nomad-connector/contract",
+  "version": "0.1.0",
+  "description": "Nomad Connector: ILP connector hub as a HotPocket contract (everpocket, Xahau multisig).",
+  "main": "src/index.js",
+  "license": "MIT",
+  "scripts": {
+    "build": "ncc build src/index.js -o dist --minify=false && cp hp.cfg.override dist/ && cp nomad.config.json dist/ 2>/dev/null || cp nomad.config.example.json dist/nomad.config.json",
+    "start": "npm run build && hpdevkit deploy dist"
+  },
+  "dependencies": {
+    "hotpocket-nodejs-contract": "0.7.4",
+    "everpocket-nodejs-contract": "0.1.6",
+    "evernode-js-client": "0.6.61",
+    "ilp-packet": "3.1.4-alpha.2",
+    "ilp-protocol-ildcp": "2.2.4-alpha.2",
+    "ripple-binary-codec": "^2.10.0",
+    "ripple-keypairs": "^3.0.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "0.38.3"
+  }
+}
