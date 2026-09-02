@@ -17,25 +17,20 @@ docker version --format "docker server {{.Server.Version}}"
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: docker is not reachable."; "no-docker" | Out-File (Join-Path $out "DONE"); Stop-Transcript | Out-Null; exit 1 }
 
 Step "hpdevkit"
-# Installed locally (not -g) with --ignore-scripts: its evernode-js-client dependency tries to
-# build native modules on install, which needs VS build tools on Windows; hpdevkit itself is an
-# ncc bundle and does not need them for a local cluster.
-$hpkPrefix = Join-Path $out "hpk"
-$hpk = Join-Path $hpkPrefix "node_modules\.bin\hpdevkit.cmd"
-if (-not (Test-Path $hpk)) {
-  New-Item -ItemType Directory -Force -Path $hpkPrefix | Out-Null
-  cmd /c "npm install hpdevkit@0.6.9 --ignore-scripts --no-audit --no-fund --prefix `"$hpkPrefix`" > `"$out\npm-hpdevkit.log`" 2>&1"
-  Get-Content (Join-Path $out "npm-hpdevkit.log") -Tail 15
-}
-if (-not (Test-Path $hpk)) { Write-Host "ERROR: hpdevkit did not install (see out\npm-hpdevkit.log)"; "no-hpdevkit" | Out-File (Join-Path $out "DONE"); Stop-Transcript | Out-Null; exit 1 }
-cmd /c "`"$hpk`" version 2>&1"
+# npm on this machine is broken ("Class extends value undefined"), so hpdevkit is not installed
+# with npm here: it was installed into node_modules from the Linux side of the Cowork bridge
+# (--ignore-scripts: its evernode-js-client dependency would otherwise try a native build) and
+# is run straight through node. hpdevkit is a self-contained ncc bundle that only shells out to docker.
+$hpkIndex = Join-Path $root "node_modules\hpdevkit\index.js"
+if (-not (Test-Path $hpkIndex)) { Write-Host "ERROR: node_modules\hpdevkit\index.js is missing"; "no-hpdevkit" | Out-File (Join-Path $out "DONE"); Stop-Transcript | Out-Null; exit 1 }
+cmd /c "node `"$hpkIndex`" version 2>&1"
 
 Step "deploy contract to a 3-node cluster"
 Set-Location (Join-Path $root "contract")
 $env:HP_CLUSTER_SIZE = "3"
 $env:HP_DEFAULT_NODE = "0"   # 0 = do not stream node logs after deploy (deploy returns)
 $deployLog = Join-Path $out "deploy.log"
-cmd /c "`"$hpk`" deploy dist > `"$deployLog`" 2>&1"
+cmd /c "node `"$hpkIndex`" deploy dist > `"$deployLog`" 2>&1"
 Get-Content $deployLog -Tail 40 -ErrorAction SilentlyContinue
 $deadline = (Get-Date).AddMinutes(3)
 do {
