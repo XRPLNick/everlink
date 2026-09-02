@@ -17,27 +17,37 @@ docker version --format "docker server {{.Server.Version}}"
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: docker is not reachable."; "no-docker" | Out-File (Join-Path $out "DONE"); Stop-Transcript | Out-Null; exit 1 }
 
 Step "hpdevkit"
-if (-not (Get-Command hpdevkit -ErrorAction SilentlyContinue)) { cmd /c "npm i -g hpdevkit 2>&1" }
-cmd /c "hpdevkit --help 2>&1" | Select-Object -First 5
+# Installed locally (not -g) with --ignore-scripts: its evernode-js-client dependency tries to
+# build native modules on install, which needs VS build tools on Windows; hpdevkit itself is an
+# ncc bundle and does not need them for a local cluster.
+$hpkPrefix = Join-Path $out "hpk"
+$hpk = Join-Path $hpkPrefix "node_modules\.bin\hpdevkit.cmd"
+if (-not (Test-Path $hpk)) {
+  New-Item -ItemType Directory -Force -Path $hpkPrefix | Out-Null
+  cmd /c "npm install hpdevkit@0.6.9 --ignore-scripts --no-audit --no-fund --prefix `"$hpkPrefix`" > `"$out\npm-hpdevkit.log`" 2>&1"
+  Get-Content (Join-Path $out "npm-hpdevkit.log") -Tail 15
+}
+if (-not (Test-Path $hpk)) { Write-Host "ERROR: hpdevkit did not install (see out\npm-hpdevkit.log)"; "no-hpdevkit" | Out-File (Join-Path $out "DONE"); Stop-Transcript | Out-Null; exit 1 }
+cmd /c "`"$hpk`" version 2>&1"
 
 Step "deploy contract to a 3-node cluster"
 Set-Location (Join-Path $root "contract")
 $env:HP_CLUSTER_SIZE = "3"
+$env:HP_DEFAULT_NODE = "0"   # 0 = do not stream node logs after deploy (deploy returns)
 $deployLog = Join-Path $out "deploy.log"
-# hpdevkit deploy keeps following node logs; run it detached and poll docker instead.
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c hpdevkit deploy dist > `"$deployLog`" 2>&1" -WindowStyle Hidden
-$deadline = (Get-Date).AddMinutes(10)
+cmd /c "`"$hpk`" deploy dist > `"$deployLog`" 2>&1"
+Get-Content $deployLog -Tail 40 -ErrorAction SilentlyContinue
+$deadline = (Get-Date).AddMinutes(3)
 do {
   Start-Sleep -Seconds 10
-  $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hp" })
-  Write-Host ("  containers up: " + $names.Count)
+  $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })
+  Write-Host ("  hotpocket nodes up: " + $names.Count)
 } while (((Get-Date) -lt $deadline) -and ($names.Count -lt 3))
-Start-Sleep -Seconds 30
+Start-Sleep -Seconds 25
 docker ps --format "{{.Names}}  {{.Status}}  {{.Ports}}"
 
 Step "node logs"
-foreach ($n in $names) { Write-Host "--- $n"; docker logs --tail 40 $n 2>&1 | Out-String | Write-Host }
-Get-Content $deployLog -Tail 30 -ErrorAction SilentlyContinue
+foreach ($n in $names) { Write-Host "--- $n"; docker logs --tail 60 $n 2>&1 | Out-String | Write-Host }
 
 Step "peer demo (Alice on node 1, Bob on node 2)"
 Set-Location $root
