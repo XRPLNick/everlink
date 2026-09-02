@@ -1,5 +1,18 @@
 # Deploying the Nomad Connector
 
+## 0. What has actually been run
+
+`deploy/local/` is the kit that ran on a Windows 10 machine with Docker Desktop 29 and Node 24:
+`run-nomad.cmd` → `run.ps1` deploys `contract/dist` (built with `npm run build:local`, ledger
+disabled, 10 XAH dev faucet per peer, 1 s rounds) to a 3-node `hpdevkit` cluster and then runs
+`demo-real.js`, which connects Alice to node 1 and Bob to node 2 and pays 1 XAH with
+`ilp-protocol-stream`. Observed: STREAM handshake (ILDCP + rate probes) 9.0 s, the 1 XAH
+payment 5.8 s, fee 0.0025 XAH, identical ledger/state hashes on all nodes, clean close.
+Two host-side quirks the kit works around: `npm` on that machine was broken ("Class extends
+value undefined"), so hpdevkit is installed with `--ignore-scripts` from the Linux side of
+the Cowork bridge and run as `node node_modules/hpdevkit/index.js`; and `hpdevkit deploy`
+streams node logs forever unless `HP_DEFAULT_NODE=0`.
+
 Two ways to run the contract as a real HotPocket cluster. Both need Docker on the machine
 that runs the dev kits (the cloud workspace this prototype was built in has no Docker daemon,
 which is why the repository ships with an in-process simulator instead).
