@@ -146,7 +146,7 @@
   <div class="meta">
     <span><span class="status">prototype</span></span>
     <span>date <b>2 September 2026</b></span>
-    <span>code <b>nomad-connector.zip</b> (contract · plugin · simulator · 17 tests)</span>
+    <span>code <b>nomad-connector.zip</b> (contract · plugin · simulator · 18 tests · real 3-node cluster run)</span>
     <span>origin <b>forum.interledger.org/t/126</b>, March 2019</span>
   </div>
 </header>
@@ -154,7 +154,7 @@
 <section class="prose" id="summary">
   <h2><span class="n">§1</span>Summary</h2>
   <p class="lead">The 2019 idea is buildable in 2026, and the half of it that sounded hardest — a contract with no operator that keeps itself hosted — is the half Evernode has already solved. What remains hard is that a connector is custodial, and that the law has moved from "is it decentralised?" to "who has control?".</p>
-  <p>This note describes a working prototype: a deterministic ILP connector core that runs unchanged on a simulated three-node HotPocket cluster, an <code>ilp-plugin-hotpocket</code> that lets the unmodified <code>ilp-protocol-stream</code> library pay through it, a settlement design built on Xahau payment channels and the cluster's multisig account, and a treasury loop that keeps the hosts paid in EVR. A production bridge to Xahau is written against everpocket's real API and exercised through a fake; it has not yet been run on a live Evernode cluster.</p>
+  <p>This note describes a working prototype: a deterministic ILP connector core that runs unchanged on a simulated three-node HotPocket cluster <em>and</em> on a real one (three <code>hpdevkit</code> nodes in Docker, where the unmodified <code>ilp-protocol-stream</code> library paid 1 XAH from a peer on node 1 to a peer on node 2 in 5.8 s), an <code>ilp-plugin-hotpocket</code> that makes that possible, a settlement design built on Xahau payment channels and the cluster's multisig account, and a treasury loop that keeps the hosts paid in EVR. The bridge to Xahau is written against everpocket's real API and exercised through a fake; it has not yet been run against Xahau testnet.</p>
   <p>Recommendation: treat this as an alternative ILP network for crypto-native peers, not as a node on the Interledger Foundation's Rafiki network; engineer every remaining design decision around the "non-controlling" test now in front of the U.S. Senate; and take the next step on Xahau testnet with three real hosts before adding liquidity providers or a second asset.</p>
 </section>
 
@@ -302,7 +302,8 @@
         <tr><td>ilp-plugin-hotpocket</td><td>The <code>ilp-plugin</code> interface (<code>sendData</code>, data handler) over the HotPocket user channel, plus <code>sendClaim</code> / <code>setPayoutAddress</code>. Works with <code>hotpocket-js-client</code> or the simulator.</td><td><span class="tag">tested</span></td></tr>
         <tr><td>Xahau bridge</td><td>everpocket wiring: VoteContext over NPL, XrplContext for multisign-and-submit, NomadContext for leases. Observations become facts only after a vote.</td><td><span class="tag money">written, run against a fake</span></td></tr>
         <tr><td>simulator</td><td>N in-process HotPocket instances per round with real NPL semantics, state-hash comparison after every round, mock Xahau with channels, claim verification, multisig idempotency, DEX and leases.</td><td><span class="tag">tested</span></td></tr>
-        <tr><td>deployment</td><td><code>hpdevkit deploy dist -m -s</code> for a local multisig cluster; <code>evdevkit cluster-create … --signer-count</code> for Evernode.</td><td><span class="tag gap">documented, not run</span></td></tr>
+        <tr><td>local cluster</td><td><code>deploy/local</code>: <code>hpdevkit</code> 3-node cluster in Docker Desktop (Windows), ledger disabled, dev faucet, 1 s rounds; <code>demo-real.js</code> pays through it with STREAM.</td><td><span class="tag">run, payment verified</span></td></tr>
+        <tr><td>Evernode deployment</td><td><code>evdevkit cluster-create … --signer-count</code> with the Xahau bridge and Nomad leases enabled.</td><td><span class="tag gap">documented, not run</span></td></tr>
       </tbody>
     </table>
     </div>
@@ -375,7 +376,7 @@
   </figure>
   <div class="prose">
     <h3>Latency budget</h3>
-    <p>With the example config (3 s rounds, 8 s minimum window) a packet round-trip is roughly 6–9 s and a STREAM packet with the library's default 30 s expiry clears the connector's <code>expiresAt &gt; now + 2w</code> check with room to spare. The simulator runs 25–40 ms rounds, which is why the demo pays 2.5 XAH end to end in about 250 ms; on real hosts, throughput comes from the hundreds of packets a round can carry, not from per-packet speed. The tests confirm the mechanics rather than the timing: same code, faster clock.</p>
+    <p>Measured on the real local cluster (1 s rounds, 4 s minimum window): the STREAM handshake — ILDCP plus the library's five exchange-rate probes, each a two-round trip — takes 9.0 s, and the 1 XAH payment itself 5.8 s. With the Evernode example config (3 s rounds, 8 s window) expect roughly three times that; a STREAM packet with the library's default 30 s expiry still clears the connector's <code>expiresAt &gt; now + 2w</code> check. The simulator runs 25–40 ms rounds, which is why its demo pays 2.5 XAH end to end in about 250 ms. On real hosts, throughput comes from the hundreds of packets a round can carry, not from per-packet speed.</p>
     <p>Rounds that touch the ledger take longer, because each node queries Xahau and the cluster votes. The bridge only does that every <code>factsEvery</code> rounds or when a settlement is pending, so packet-only rounds stay short.</p>
   </div>
 </section>
@@ -402,7 +403,7 @@
   <h2><span class="n">§6</span>Determinism and the fact pipeline</h2>
   <p>HotPocket reaches consensus on users, inputs, outputs and the state hash. The contract therefore has to be a pure function of what the cluster agreed on, and anything a node learns on its own — the account balance, which channels exist, whether a transaction validated — must go through a vote before it can touch state. The core never reads a clock, never opens a socket and never uses randomness; the bridge does all of that, and returns <em>facts</em> only after an NPL election picks the majority view (ties broken by hash, so every node picks the same one).</p>
   <p>The same discipline applies on the way out. The core emits <em>intents</em> — transactions it wants signed — and everpocket's <code>multiSignAndSubmitTransaction</code> decides the sequence number by vote, collects the signer nodes' signatures over NPL, has one node submit, and votes the result back so every node applies the same outcome. A payout is debited when it is planned, refunded if submission fails, and confirmed only when a later round's facts show it validated.</p>
-  <p>The simulator enforces the property the platform would: after every round it hashes each node's state directory and compares outputs; the first disagreement stops the cluster. One test tampers with a node's state file on purpose and checks that the fork is caught; the others, including the STREAM payment and the fake-everpocket bridge run, finish with no fork across all rounds.</p>
+  <p>The simulator enforces the property the platform would: after every round it hashes each node's state directory and compares outputs; the first disagreement stops the cluster. One test tampers with a node's state file on purpose and checks that the fork is caught; the others, including the STREAM payment and the fake-everpocket bridge run, finish with no fork across all rounds. On the real cluster the three HotPocket nodes reported identical ledger and state hashes every round (for example <code>lcl:158-8ffa2042 state:bd17d692</code> on nodes 1 and 3), with the contract taking about 100 ms of each 1 s round.</p>
   <p>One caveat belongs here. everpocket keeps its own bookkeeping (<code>transactions.json</code>, cluster data) in consensus state, and writes it from per-node ledger queries without a vote. The connector's state cannot diverge through that path, but a node whose everpocket files diverge will still fall out of sync. It is the kind of thing a testnet run will surface.</p>
 </section>
 
@@ -457,7 +458,34 @@
 <section id="evidence">
   <h2><span class="n">§10</span>What the prototype shows</h2>
   <div class="prose">
-    <p>Seventeen tests: eleven on the core (packets, fees, expiry, rejection codes, claims, redemptions, payouts, treasury, read requests, malformed input), a three-node simulator run with settlement and lease payments, a deliberate fork, the production bridge driven through a fake everpocket, and an unmodified <code>ilp-protocol-stream</code> payment from Alice to Bob. The demo below is one run of <code>npm run demo</code>.</p>
+    <p>Eighteen tests: twelve on the core (packets, fees, expiry, rejection codes, disconnects, claims, redemptions, payouts, treasury, read requests, malformed input), a three-node simulator run with settlement and lease payments, a deliberate fork, the production bridge driven through a fake everpocket, and an unmodified <code>ilp-protocol-stream</code> payment from Alice to Bob. Then the same contract on a real cluster.</p>
+    <h3>Real cluster: three hpdevkit nodes in Docker Desktop</h3>
+    <p>Ledger disabled, a 10 XAH dev faucet per peer, 1 s rounds. Alice's plugin connects to node 1, Bob's to node 2; the payment crosses consensus. This is the transcript of <code>deploy/local/demo-real.js</code> on the fifth run, after two plugin fixes the real nodes forced (HotPocket hands outputs to clients already parsed, and rejects same-millisecond input nonces) and one connector fix (a packet whose next hop disconnects is now rejected T01 instead of holding the sender's funds until expiry).</p>
+  </div>
+<pre><code>23:51:09.596 connecting Alice -> wss://localhost:8081, Bob -> wss://localhost:8082
+23:51:11.659 connected in 2045 ms
+23:51:11.947 connector info: {"address":"g.nomad.local","asset":"XAH","feeBps":25,"rounds":124,
+             "stats":{"claims":0,"expiries":0,"fulfills":2,"prepares":14,"rejects":12}}
+23:51:15.536 bob STREAM address: g.nomad.local.eddf1e7c936d6fa9c33e32c6053bde753d…
+23:51:24.544 STREAM connection established in 9007 ms (ILDCP + rate probes through the cluster)
+23:51:24.764 alice balance after her first input (dev faucet): 10.000000 XAH
+23:51:30.539   packet fulfilled: +1.000000 XAH (total 1.000000 XAH)
+23:51:30.540 Alice paid Bob 1.000000 XAH in 5775 ms; Bob received 0.997500 XAH
+23:51:30.931 balances at the connector: Alice 9.000000 XAH (held 0.000000 XAH) Bob 9.996499 XAH
+23:51:31.142 connector stats: {"claims":0,"expiries":0,"fulfills":3,"prepares":25,"rejects":19} rounds 143
+Closing connection to wss://localhost:8081
+Closing connection to wss://localhost:8082
+23:51:45.542 done
+
+hpdevkit_default_node_1  Up 2 minutes  0.0.0.0:8081->8081/tcp
+hpdevkit_default_node_2  Up 2 minutes  0.0.0.0:8082->8082/tcp
+hpdevkit_default_node_3  Up 2 minutes  0.0.0.0:8083->8083/tcp
+node 1: ****Ledger created**** (lcl:158-8ffa2042 state:bd17d692 patch:adf7287e)
+node 3: ****Ledger created**** (lcl:158-8ffa2042 state:bd17d692 patch:adf7287e)</code></pre>
+  <div class="prose">
+    <p>The 19 rejects are STREAM's exchange-rate probes (deliberately unfulfillable) and its oversized test packets (F08, T04) — the library uses them to discover the rate and the maximum packet size, exactly as it would against any other connector. Bob's 9.996 XAH is his faucet balance plus the 0.9975 XAH received, minus a probe of his own still held at that moment.</p>
+    <h3>Simulator</h3>
+    <p>The demo below is one run of <code>npm run demo</code> against the in-process simulator and mock Xahau, which is where settlement and the self-funding loop are exercised.</p>
   </div>
 <pre><code>== Nomad Connector demo ==
 cluster: 3 HotPocket nodes, 40 ms rounds
@@ -494,7 +522,7 @@ consensus forks: none across 32 rounds on 3 nodes</code></pre>
   <h2><span class="n">§11</span>Open questions and next steps</h2>
   <h3>Before anyone relies on it</h3>
   <ul>
-    <li><strong>Run it for real.</strong> A three-host cluster on Xahau testnet through <code>evdevkit cluster-create --signer-count 3</code>, the tenant key retired, one peer funding through a real channel. This is where everpocket's rough edges, round timing and DEX assumptions get measured instead of assumed.</li>
+    <li><strong>Run it on Evernode.</strong> The local cluster run settled the HotPocket half (consensus, user channel, timing). Next is a three-host cluster on Xahau testnet through <code>evdevkit cluster-create --signer-count 3</code>, the tenant key retired, one peer funding through a real channel — where everpocket's rough edges and the DEX assumptions get measured instead of assumed.</li>
     <li><strong>Liquidity providers.</strong> Fees alone make the float grow slowly. An LP deposit with shares and withdrawal rights — and nothing else — keeps the control posture intact; anything resembling governance rights over the pool does not.</li>
     <li><strong>Outbound channels.</strong> Threshold ed25519 signing across the nodes would let the cluster sign channel claims to peers, making payouts instant and fee-free.</li>
     <li><strong>Upgrades.</strong> "No upgrade path" is the safest posture and the least practical one. Options are hash-pinned versions that peers opt into by reconnecting, or a migration message that moves balances to a successor contract the peers name — never an admin key.</li>
