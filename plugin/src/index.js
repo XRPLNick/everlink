@@ -119,13 +119,14 @@ class HotPocketPlugin extends EventEmitter {
   }
   async _read(obj) {
     const res = await this._client.submitContractReadRequest(JSON.stringify(obj));
-    return res ? JSON.parse(typeof res === 'string' ? res : res.toString()) : null;
+    return res ? decodeOutput(res) : null;
   }
 
   _onOutputs({ outputs }) {
     for (const raw of outputs || []) {
       let msg;
-      try { msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString()); } catch (e) { continue; }
+      try { msg = decodeOutput(raw); } catch (e) { this._log('undecodable output', e); continue; }
+      if (!msg || typeof msg !== 'object') continue;
       this._onMessage(msg).catch((e) => this._log('output handling failed', e));
     }
   }
@@ -159,6 +160,14 @@ class HotPocketPlugin extends EventEmitter {
       default: this.emit('message', msg);
     }
   }
+}
+
+// HotPocket's JSON protocol hands contract outputs to the client already parsed (the contract's
+// bytes are embedded in the server's JSON message), so a real node delivers objects; the
+// simulator and the BSON protocol deliver strings/buffers. Accept all three.
+function decodeOutput(raw) {
+  if (raw && typeof raw === 'object' && !Buffer.isBuffer(raw) && !(raw instanceof Uint8Array)) return raw;
+  return JSON.parse(Buffer.isBuffer(raw) || raw instanceof Uint8Array ? Buffer.from(raw).toString('utf8') : String(raw));
 }
 
 function localReject(code, message) {

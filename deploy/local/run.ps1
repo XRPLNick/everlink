@@ -30,19 +30,24 @@ Set-Location (Join-Path $root "contract")
 $env:HP_CLUSTER_SIZE = "3"
 $env:HP_DEFAULT_NODE = "0"   # 0 = do not stream node logs after deploy (deploy returns)
 $deployLog = Join-Path $out "deploy.log"
-cmd /c "node `"$hpkIndex`" deploy dist > `"$deployLog`" 2>&1"
-Get-Content $deployLog -Tail 40 -ErrorAction SilentlyContinue
-$deadline = (Get-Date).AddMinutes(3)
-do {
-  Start-Sleep -Seconds 10
-  $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })
-  Write-Host ("  hotpocket nodes up: " + $names.Count)
-} while (((Get-Date) -lt $deadline) -and ($names.Count -lt 3))
-Start-Sleep -Seconds 25
+$names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })
+if ($names.Count -ge 3 -and -not $env:NOMAD_REDEPLOY) {
+  Write-Host "cluster already running ($($names.Count) nodes); set NOMAD_REDEPLOY=1 to redeploy the contract"
+} else {
+  cmd /c "node `"$hpkIndex`" deploy dist > `"$deployLog`" 2>&1"
+  Get-Content $deployLog -Tail 25 -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch "Pulling|Download|Extracting" }
+  $deadline = (Get-Date).AddMinutes(3)
+  do {
+    Start-Sleep -Seconds 10
+    $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })
+    Write-Host ("  hotpocket nodes up: " + $names.Count)
+  } while (((Get-Date) -lt $deadline) -and ($names.Count -lt 3))
+  Start-Sleep -Seconds 25
+}
 docker ps --format "{{.Names}}  {{.Status}}  {{.Ports}}"
 
 Step "node logs"
-foreach ($n in $names) { Write-Host "--- $n"; docker logs --tail 60 $n 2>&1 | Out-String | Write-Host }
+foreach ($n in $names) { Write-Host "--- $n"; cmd /c "docker logs --tail 12 $n 2>&1" }
 
 Step "peer demo (Alice on node 1, Bob on node 2)"
 Set-Location $root
