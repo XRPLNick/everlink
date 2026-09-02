@@ -55,14 +55,16 @@ async function main() {
     stream.on('error', (e) => { clearTimeout(timer); reject(e); });
   });
   say(`Alice paid Bob ${XAH(stream.totalSent)} in ${Date.now() - t2} ms; Bob received ${XAH(received)}`);
-  await conn.end();
 
+  // Read balances while Alice's plugin is still connected: STREAM disconnects the plugin
+  // when its connection closes (createConnection owns the plugin).
   const ab = await alice.getBalance(); const bb = await bob.getBalance();
   say('balances at the connector:', `Alice ${XAH(ab.balance)} (held ${XAH(ab.held)})`, `Bob ${XAH(bb.balance)}`);
-  const info2 = await alice.getInfo();
+  const info2 = await bob.getInfo();
   say('connector stats:', JSON.stringify(info2.stats), 'rounds', info2.rounds);
+  await conn.end();
 
-  await server.close(); await alice.disconnect(); await bob.disconnect();
+  await server.close(); await bob.disconnect();
   say('done');
   process.exit(0);
 }
