@@ -26,7 +26,9 @@ const codec = require('./codec');
 const claims = require('./claims');
 
 const STATE_VERSION = 1;
-const OFFER_BACKOFF_ROUNDS = 20; // rounds to wait after a failed EVR top-up before retrying
+const OFFER_BACKOFF_ROUNDS = 20;  // rounds to wait after a failed EVR top-up before retrying
+const REDEEM_RETRY_ROUNDS = 200;  // a redemption never confirmed is retried after this many rounds
+const PRUNE_EVERY_ROUNDS = 100;
 
 const DEFAULT_CONFIG = Object.freeze({
   // ILP
@@ -39,6 +41,9 @@ const DEFAULT_CONFIG = Object.freeze({
   maxPacketAmount: '1000000000',    // 1000 XAH per packet
   maxPendingPerPeer: 500,
   probeCreditDrops: '10000',        // tiny credit line (0.01 XAH) so unfunded peers can probe rates
+  maxPeers: 10000,                  // cap on peer records (each HotPocket key is a potential peer)
+  idlePeerRounds: 20000,            // forget peers with nothing owed that have been silent this long
+  minSettleDelaySec: 3600,          // channels closing faster than this are not accepted for claims
   // Settlement (all drops)
   masterAddress: null,              // the cluster's multisig Xahau account
   redeemThresholdDrops: '10000000', // redeem a channel once 10 XAH of claims are unredeemed
@@ -144,6 +149,18 @@ class RoundContext {
       ch.settleDelay = c.settleDelay;
       // A redemption is done once the ledger balance caught up with it.
       if (ch.redeemPending && toBig(ch.ledgerBalance) >= toBig(ch.redeemPending.amount)) ch.redeemPending = null;
+      // The owner can also push funds on-ledger (PaymentChannelClaim by the source account).
+      // Never double-count: fast-forward our claim watermark and credit the bound peer.
+      if (toBig(ch.ledgerBalance) > toBig(ch.lastClaimAmount)) {
+        const pushed = toBig(ch.ledgerBalance) - toBig(ch.lastClaimAmount);
+        ch.lastClaimAmount = ch.ledgerBalance;
+        if (ch.peer && state.peers[ch.peer]) {
+          state.peers[ch.peer].balance = sstr(toSigned(state.peers[ch.peer].balance) + pushed);
+          this.out(ch.peer, { t: 'claim_ack', ch: c.id, amt: ch.ledgerBalance, ok: true, credited: str(pushed), balance: state.peers[ch.peer].balance, onLedger: true });
+        } else {
+          this.note(`channel ${c.id}: ${pushed} drops delivered on-ledger before any claim; unattributed`);
+        }
+      }
       state.channels[c.id] = ch;
     }
     if (facts.channelsComplete) {
@@ -216,6 +233,9 @@ class RoundContext {
     const parsed = codec.parseInput(raw);
     if (parsed.error) { this.out(peer, { t: 'err', reason: parsed.error }); return; }
     const msg = parsed.msg;
+    if (!this.state.peers[peer] && Object.keys(this.state.peers).length >= this.config.maxPeers) {
+      return this.out(peer, { t: 'err', reason: 'connector is full' });
+    }
     ensurePeer(this.state, peer, this.lcl);
     switch (msg.t) {
       case 'ilp': return this.handleIlp(peer, msg.id, msg.packet);
@@ -347,6 +367,7 @@ class RoundContext {
     if (amt <= last) return ack(false, { reason: 'claim amount must exceed previous claim', last: ch.lastClaimAmount });
     if (amt > toBig(ch.fundedAmount)) return ack(false, { reason: 'claim exceeds channel funding', funded: ch.fundedAmount });
     if (ch.expiration && ch.expiration <= this.ts) return ack(false, { reason: 'channel is expired' });
+    if (ch.settleDelay !== undefined && ch.settleDelay !== null && ch.settleDelay < this.config.minSettleDelaySec) return ack(false, { reason: 'settle delay too short', minSettleDelaySec: this.config.minSettleDelaySec });
     if (!claims.verifyClaim({ channel, amount, signature, publicKey: ch.publicKey })) return ack(false, { reason: 'bad signature' });
 
     const credit = amt - last;
@@ -382,21 +403,37 @@ class RoundContext {
     return sum;
   }
 
+  prunePeers() {
+    const { state, config } = this;
+    if (this.lcl % PRUNE_EVERY_ROUNDS !== 0) return;
+    const bound = new Set(Object.values(state.channels).map((c) => c.peer));
+    for (const [pub, p] of Object.entries(state.peers)) {
+      const idle = this.lcl - (p.lastSeenLcl || 0) > config.idlePeerRounds;
+      const empty = toSigned(p.balance) === 0n && toBig(p.held) === 0n && !p.pendingPayout && Object.keys(p.inflight).length === 0;
+      if (idle && empty && !bound.has(pub)) delete state.peers[pub];
+    }
+  }
+
   plan() {
     const { state, config } = this;
+    this.prunePeers();
     if (!config.masterAddress) return;
     const master = config.masterAddress;
     const fee = config.baseFeeDrops;
 
     // 1. Redeem channels: on threshold, or as soon as the owner starts closing them.
     for (const [id, ch] of Object.entries(state.channels)) {
+      if (ch.redeemPending && this.lcl - (ch.redeemPending.lcl || this.lcl) > REDEEM_RETRY_ROUNDS) {
+        this.note(`channel ${id}: redemption ${ch.redeemPending.intentId} never confirmed; retrying`);
+        ch.redeemPending = null;
+      }
       if (ch.redeemPending) continue;
       const unredeemed = toBig(ch.lastClaimAmount) - toBig(ch.ledgerBalance);
       if (unredeemed <= 0n) continue;
       const closing = !!ch.expiration;
       if (!closing && unredeemed < toBig(config.redeemThresholdDrops)) continue;
       const intentId = nextId(state, 'r');
-      ch.redeemPending = { intentId, amount: ch.lastClaimAmount, hash: null };
+      ch.redeemPending = { intentId, amount: ch.lastClaimAmount, hash: null, lcl: this.lcl };
       this.intents.push({
         id: intentId, kind: 'redeem', channel: id,
         tx: {

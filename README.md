@@ -12,7 +12,7 @@ one party runs the contract, all parties who use it pay for it as they use it, a
 pays for its own resource usage"* — built on the platform that now exists for it.
 
 **Status: prototype.** The deterministic core, the peer plugin, the multi-node simulator and
-the end-to-end STREAM payment are real and tested (`npm test`, 15 tests). The production
+the end-to-end STREAM payment are real and tested (`npm test`, 17 tests). The production
 adapter that talks to Xahau through `everpocket-nodejs-contract` is written against the
 library's real API and exercised through a fake everpocket, but has not yet been run on a
 live Evernode cluster — the workspace this was built in has no Docker. See

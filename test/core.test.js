@@ -236,3 +236,49 @@ test('malformed inputs never throw and never change balances', () => {
   assert.equal(s.peers[H.PEER_A].balance, before.balance);
   assert.equal(s.peers[H.PEER_A].held, before.held);
 });
+
+test('funds the owner pushes on-ledger are credited once, never double-counted', () => {
+  const s = initialState();
+  const keys = H.channelKeys();
+  const ch = 'E'.repeat(64);
+  const facts = (balance) => ({ ledgerIndex: 1, masterBalance: '50000000', evrBalance: '30', channelsComplete: true, channels: [H.channelFact(ch, { account: keys.address, publicKey: keys.publicKey, amount: 10_000_000, balance })] });
+  round(s, [], { facts: facts(0) });
+  let rc = round(s, [{ peer: H.PEER_A, raw: H.claimInput(ch, 1_000_000, keys.privateKey) }]);
+  assert.equal(H.outputsTo(rc, H.PEER_A)[0].credited, '1000000');
+  // Owner submits a PaymentChannelClaim for 4 XAH themselves; ledger balance jumps past our watermark.
+  rc = round(s, [], { facts: facts(4_000_000) });
+  const ack = H.outputsTo(rc, H.PEER_A)[0];
+  assert.equal(ack.onLedger, true);
+  assert.equal(ack.credited, '3000000');
+  assert.equal(s.peers[H.PEER_A].balance, '4000000');
+  assert.equal(s.channels[ch].lastClaimAmount, '4000000');
+  // A later off-ledger claim must exceed the new watermark.
+  rc = round(s, [{ peer: H.PEER_A, raw: H.claimInput(ch, 3_500_000, keys.privateKey) }]);
+  assert.equal(H.outputsTo(rc, H.PEER_A)[0].ok, false);
+  rc = round(s, [{ peer: H.PEER_A, raw: H.claimInput(ch, 4_500_000, keys.privateKey) }]);
+  assert.equal(H.outputsTo(rc, H.PEER_A)[0].credited, '500000');
+  assert.equal(rc.intents.length, 0, 'unredeemed 0.5 XAH is below threshold');
+});
+
+test('channels with a short settle delay are refused; peer cap and idle pruning', () => {
+  const s = initialState();
+  const keys = H.channelKeys();
+  const ch = 'F'.repeat(64);
+  const fact = { ...H.channelFact(ch, { account: keys.address, publicKey: keys.publicKey, amount: 10_000_000 }), settleDelay: 60 };
+  round(s, [], { facts: { ledgerIndex: 1, masterBalance: '0', evrBalance: '0', channelsComplete: true, channels: [fact] } });
+  let rc = round(s, [{ peer: H.PEER_A, raw: H.claimInput(ch, 1_000, keys.privateKey) }]);
+  assert.equal(H.outputsTo(rc, H.PEER_A)[0].reason, 'settle delay too short');
+
+  const small = makeConfig({ masterAddress: 'rMaster', maxPeers: 2, idlePeerRounds: 10 });
+  const s2 = initialState();
+  const hello = (peer, lcl) => processRound(s2, small, { timestamp: T0, lclSeqNo: lcl, connected: new Set(), inputs: [{ peer, raw: JSON.stringify({ t: 'withdraw' }) }], facts: null });
+  hello(H.PEER_A, 1); hello(H.PEER_B, 2);
+  rc = hello(H.PEER_C, 3);
+  assert.equal(H.outputsTo(rc, H.PEER_C)[0].reason, 'connector is full');
+  assert.equal(Object.keys(s2.peers).length, 2);
+  // After 100 rounds of silence both peers (nothing owed) are pruned and C can join.
+  processRound(s2, small, { timestamp: T0, lclSeqNo: 100, connected: new Set(), inputs: [], facts: null });
+  assert.equal(Object.keys(s2.peers).length, 0);
+  rc = hello(H.PEER_C, 101);
+  assert.equal(H.outputsTo(rc, H.PEER_C)[0].reason, 'set a payout address first (settle_to)');
+});
