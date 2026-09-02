@@ -27,11 +27,14 @@ function loadConfig() {
 
 async function main() {
   const file = loadConfig();
-  const config = makeConfig(file.connector || {});
-  if (!config.masterAddress) throw new Error('connector.masterAddress (the cluster multisig account) is required');
+  const xahauEnabled = !!(file.xahau && file.xahau.enabled !== false);
+  // Without a ledger there is nothing to settle on: a null masterAddress makes the core skip
+  // settlement planning entirely (packets still route; balances still track).
+  const config = makeConfig({ ...(file.connector || {}), ...(xahauEnabled ? {} : { masterAddress: null }) });
+  if (xahauEnabled && !config.masterAddress) throw new Error('connector.masterAddress (the cluster multisig account) is required when xahau is enabled');
 
   let bridge = null;
-  if (file.xahau && file.xahau.enabled !== false) {
+  if (xahauEnabled) {
     const { XahauBridge } = require('./adapters/xahau-bridge');
     bridge = new XahauBridge({
       masterAddress: config.masterAddress,

@@ -6,7 +6,8 @@
   "license": "MIT",
   "scripts": {
     "build": "ncc build src/index.js -o dist --minify=false && cp hp.cfg.override dist/ && cp nomad.config.json dist/ 2>/dev/null || cp nomad.config.example.json dist/nomad.config.json",
-    "start": "npm run build && hpdevkit deploy dist"
+    "start": "npm run build && hpdevkit deploy dist",
+    "build:local": "ncc build src/index.js -o dist --minify=false && cp ../deploy/local/hp.cfg.local.override dist/hp.cfg.override && cp ../deploy/local/nomad.config.local.json dist/nomad.config.json"
   },
   "dependencies": {
     "hotpocket-nodejs-contract": "0.7.4",

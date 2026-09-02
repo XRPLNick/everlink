@@ -1,0 +1,16 @@
+{
+  "connector": {
+    "ilpAddress": "g.nomad.local",
+    "assetCode": "XAH",
+    "assetScale": 6,
+    "feeBps": 25,
+    "feeFlat": "0",
+    "minExpiryWindowMs": 4000,
+    "maxPacketAmount": "1000000000",
+    "probeCreditDrops": "10000",
+    "devFaucetDrops": "10000000",
+    "masterAddress": null
+  },
+  "xahau": { "enabled": false },
+  "nomad": null
+}

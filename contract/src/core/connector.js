@@ -41,6 +41,7 @@ const DEFAULT_CONFIG = Object.freeze({
   maxPacketAmount: '1000000000',    // 1000 XAH per packet
   maxPendingPerPeer: 500,
   probeCreditDrops: '10000',        // tiny credit line (0.01 XAH) so unfunded peers can probe rates
+  devFaucetDrops: '0',              // DEV ONLY: starting balance for every new peer (local clusters without a ledger)
   maxPeers: 10000,                  // cap on peer records (each HotPocket key is a potential peer)
   idlePeerRounds: 20000,            // forget peers with nothing owed that have been silent this long
   minSettleDelaySec: 3600,          // channels closing faster than this are not accepted for claims
@@ -79,11 +80,11 @@ function initialState() {
   };
 }
 
-function ensurePeer(state, pubkey, lcl) {
+function ensurePeer(state, pubkey, lcl, config) {
   let p = state.peers[pubkey];
   if (!p) {
     p = state.peers[pubkey] = {
-      balance: '0', held: '0', payoutAddress: null, payoutTag: null,
+      balance: str((config && config.devFaucetDrops) || '0'), held: '0', payoutAddress: null, payoutTag: null,
       withdrawRequested: false, inflight: {}, pendingPayout: null,
       firstSeenLcl: lcl, lastSeenLcl: lcl,
     };
@@ -236,7 +237,7 @@ class RoundContext {
     if (!this.state.peers[peer] && Object.keys(this.state.peers).length >= this.config.maxPeers) {
       return this.out(peer, { t: 'err', reason: 'connector is full' });
     }
-    ensurePeer(this.state, peer, this.lcl);
+    ensurePeer(this.state, peer, this.lcl, this.config);
     switch (msg.t) {
       case 'ilp': return this.handleIlp(peer, msg.id, msg.packet);
       case 'claim': return this.handleClaim(peer, msg);
