@@ -62,7 +62,7 @@ async function main() {
   say('balances at the connector:', `Alice ${XAH(ab.balance)} (held ${XAH(ab.held)})`, `Bob ${XAH(bb.balance)}`);
   const info2 = await bob.getInfo();
   say('connector stats:', JSON.stringify(info2.stats), 'rounds', info2.rounds);
-  await conn.end();
+  try { await conn.end(); } catch (e) { say('note: STREAM close handshake did not complete cleanly:', e.message); }
 
   await server.close(); await bob.disconnect();
   say('done');

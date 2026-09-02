@@ -23,6 +23,8 @@ const { signClaim } = require('./claims');
 
 const OUTPUT_EVENT = 'contract_output';
 const DEFAULT_TIMEOUT_GRACE_MS = 2000;
+const SUBMIT_RETRIES = 20;
+const SUBMIT_RETRY_MS = 500;
 
 class HotPocketPlugin extends EventEmitter {
   constructor({ createClient, servers, keys, contractId = null, requiredConnectionCount = 1, log = () => {} } = {}) {
@@ -115,11 +117,20 @@ class HotPocketPlugin extends EventEmitter {
     // HotPocket requires each user's input nonces to be strictly increasing. The client's
     // default nonce is Date.now(), which collides when STREAM fires several packets in the same
     // millisecond, so keep our own monotonic one.
-    this._nonce = Math.max((this._nonce || 0) + 1, Date.now());
-    const { submissionStatus } = await this._client.submitContractInput(JSON.stringify(obj), this._nonce);
-    const status = await submissionStatus;
-    if (!status || status.status !== 'accepted') throw new Error(`input rejected: ${status && status.reason}`);
-    return status;
+    const text = JSON.stringify(obj);
+    // hotpocket-js-client returns null while it is between connections (it reconnects on its
+    // own); give it a moment rather than failing the packet.
+    for (let attempt = 0; ; attempt++) {
+      this._nonce = Math.max((this._nonce || 0) + 1, Date.now());
+      const submission = this._connected ? await this._client.submitContractInput(text, this._nonce) : null;
+      if (submission && submission.submissionStatus) {
+        const status = await submission.submissionStatus;
+        if (!status || status.status !== 'accepted') throw new Error(`input rejected: ${status && status.reason}`);
+        return status;
+      }
+      if (!this._connected || attempt >= SUBMIT_RETRIES) throw new Error('no connection to the connector cluster');
+      await new Promise((r) => setTimeout(r, SUBMIT_RETRY_MS));
+    }
   }
   async _read(obj) {
     const res = await this._client.submitContractReadRequest(JSON.stringify(obj));

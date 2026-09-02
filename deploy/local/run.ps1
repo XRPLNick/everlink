@@ -54,6 +54,9 @@ Set-Location $root
 $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
 node deploy\local\demo-real.js wss://localhost:8081 wss://localhost:8082 2>&1 | Tee-Object -FilePath (Join-Path $out "demo.log")
 
+Step "node logs after the demo"
+foreach ($n in (docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })) { cmd /c "docker logs --since 6m $n > `"$out\$n.log`" 2>&1" }
+
 Step "done"
 Stop-Transcript | Out-Null
 "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE")
