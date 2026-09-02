@@ -282,3 +282,25 @@ test('channels with a short settle delay are refused; peer cap and idle pruning'
   rc = hello(H.PEER_C, 101);
   assert.equal(H.outputsTo(rc, H.PEER_C)[0].reason, 'set a payout address first (settle_to)');
 });
+
+test('a packet whose next hop disconnects is rejected T01 and refunded, unless it was fulfilled that round', () => {
+  const { s } = fundedState({ a: 1_000_000 });
+  const dest = H.peerAddress(CFG, H.PEER_B);
+  const c1 = H.condition();
+  let rc = round(s, [{ peer: H.PEER_A, raw: H.prepareInput('d1', { amount: 1_000, destination: dest, expiresAt: T0 + 30_000, condition: c1.condition }) }]);
+  const outId = H.outputsTo(rc, H.PEER_B)[0].id;
+  // Bob gone next round: refund.
+  rc = round(s, [], { lcl: 4, connected: [H.PEER_A] });
+  const rej = H.decodeOut(H.outputsTo(rc, H.PEER_A)[0]);
+  assert.equal(rej.data.code, 'T01');
+  assert.equal(s.peers[H.PEER_A].balance, '1000000');
+  assert.deepEqual(s.pending, {});
+  // Fulfill arriving in the very round Bob drops out still counts.
+  const c2 = H.condition();
+  rc = round(s, [{ peer: H.PEER_A, raw: H.prepareInput('d2', { amount: 1_000, destination: dest, expiresAt: T0 + 30_000, condition: c2.condition }) }], { lcl: 5 });
+  const outId2 = H.outputsTo(rc, H.PEER_B)[0].id;
+  rc = round(s, [{ peer: H.PEER_B, raw: H.fulfillInput(outId2, c2.fulfillment) }], { lcl: 6, connected: [H.PEER_A] });
+  assert.equal(H.decodeOut(H.outputsTo(rc, H.PEER_A)[0]).type, 13);
+  assert.equal(s.peers[H.PEER_B].balance, '990');
+  assert.equal(String(outId).startsWith('n'), true);
+});

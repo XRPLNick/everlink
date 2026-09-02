@@ -220,6 +220,19 @@ class RoundContext {
     }
   }
 
+  // A packet whose next hop went away would otherwise hold the sender's funds until expiry.
+  // Runs after inputs so a Fulfill that arrived in the same round as the disconnect still wins.
+  sweepDisconnected() {
+    const { state } = this;
+    for (const [outId, pend] of Object.entries(state.pending)) {
+      if (this.connected.has(pend.to)) continue;
+      this.releaseHold(pend, true);
+      delete state.pending[outId];
+      state.stats.rejects += 1;
+      this.out(pend.from, codec.ilpOut(pend.inId, ilp.reject('T01', 'peer disconnected', this.config.ilpAddress)));
+    }
+  }
+
   releaseHold(pend, refund) {
     const from = this.state.peers[pend.from];
     if (!from) return;
@@ -533,6 +546,7 @@ function processRound(state, config, input) {
   rc.applyFacts(input.facts);
   rc.sweepExpired();
   for (const { peer, raw } of input.inputs || []) rc.handleInput(peer, raw);
+  rc.sweepDisconnected();
   rc.plan();
   return rc;
 }

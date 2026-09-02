@@ -62,9 +62,12 @@ async function main() {
   say('balances at the connector:', `Alice ${XAH(ab.balance)} (held ${XAH(ab.held)})`, `Bob ${XAH(bb.balance)}`);
   const info2 = await bob.getInfo();
   say('connector stats:', JSON.stringify(info2.stats), 'rounds', info2.rounds);
+  // Close Bob's server first: its mirrored ConnectionClose needs Alice's plugin to still be
+  // connected to answer it (createConnection disconnects Alice's plugin the moment her own
+  // close completes, and with two consensus rounds per hop the mirror arrives after that).
+  try { await server.close(); } catch (e) { say('note: server close did not complete cleanly:', e.message); }
   try { await conn.end(); } catch (e) { say('note: STREAM close handshake did not complete cleanly:', e.message); }
-
-  await server.close(); await bob.disconnect();
+  await bob.disconnect();
   say('done');
   process.exit(0);
 }
