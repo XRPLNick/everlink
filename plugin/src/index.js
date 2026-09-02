@@ -25,6 +25,7 @@ const OUTPUT_EVENT = 'contract_output';
 const DEFAULT_TIMEOUT_GRACE_MS = 2000;
 const SUBMIT_RETRIES = 20;
 const SUBMIT_RETRY_MS = 500;
+const REPLY_DRAIN_MS = 3000;
 
 class HotPocketPlugin extends EventEmitter {
   constructor({ createClient, servers, keys, contractId = null, requiredConnectionCount = 1, log = () => {} } = {}) {
@@ -40,6 +41,8 @@ class HotPocketPlugin extends EventEmitter {
     this._connected = false;
     this._dataHandler = null;
     this._pending = new Map(); // id -> { resolve, timer }
+    this._clientOpen = false;
+    this._inflightReplies = 0;
     this._acks = new Map();    // claim channel -> resolve
     this.publicKey = keys && keys.publicKey ? hex(keys.publicKey) : null;
   }
@@ -60,6 +63,8 @@ class HotPocketPlugin extends EventEmitter {
     const ok = await this._client.connect();
     if (ok === false) throw new Error('could not connect to the connector cluster');
     this._connected = true;
+    this._clientOpen = true;
+    this._inflightReplies = 0;
     this.emit('connect');
   }
 
@@ -67,6 +72,13 @@ class HotPocketPlugin extends EventEmitter {
     if (!this._connected) return;
     this._connected = false;
     for (const [id, p] of this._pending) { clearTimeout(p.timer); p.resolve(localReject('T00', 'plugin disconnected')); this._pending.delete(id); }
+    // STREAM disconnects the plugin from inside its own packet handling (the peer's mirrored
+    // ConnectionClose is what triggers it). Let replies that are already being produced go out
+    // before the socket closes, otherwise the peer's packet sits at the connector until it
+    // is rejected.
+    const deadline = Date.now() + REPLY_DRAIN_MS;
+    while (this._inflightReplies > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+    this._clientOpen = false;
     await this._client.close();
     this.emit('disconnect');
   }
@@ -127,13 +139,13 @@ class HotPocketPlugin extends EventEmitter {
     // own); give it a moment rather than failing the packet.
     for (let attempt = 0; ; attempt++) {
       this._nonce = Math.max((this._nonce || 0) + 1, Date.now());
-      const submission = this._connected ? await this._client.submitContractInput(text, this._nonce) : null;
+      const submission = this._clientOpen ? await this._client.submitContractInput(text, this._nonce) : null;
       if (submission && submission.submissionStatus) {
         const status = await submission.submissionStatus;
         if (!status || status.status !== 'accepted') throw new Error(`input rejected: ${status && status.reason}`);
         return status;
       }
-      if (!this._connected) throw new Error('plugin is disconnected');
+      if (!this._clientOpen) throw new Error('plugin is disconnected');
       if (attempt >= SUBMIT_RETRIES) throw new Error('no connection to the connector cluster');
       if (attempt === 0) this._log('submit: client had no connection, waiting for it to reconnect');
       await new Promise((r) => setTimeout(r, SUBMIT_RETRY_MS));
@@ -162,12 +174,17 @@ class HotPocketPlugin extends EventEmitter {
           clearTimeout(pend.timer); this._pending.delete(msg.id); pend.resolve(packet); return;
         }
         // A Prepare forwarded to us: answer it.
-        let reply;
-        if (!this._dataHandler) reply = localReject('F02', 'no data handler registered');
-        else {
-          try { reply = await this._dataHandler(packet); } catch (e) { reply = localReject('F00', String(e && e.message ? e.message : e)); }
+        this._inflightReplies += 1;
+        try {
+          let reply;
+          if (!this._dataHandler) reply = localReject('F02', 'no data handler registered');
+          else {
+            try { reply = await this._dataHandler(packet); } catch (e) { reply = localReject('F00', String(e && e.message ? e.message : e)); }
+          }
+          await this._submit({ t: 'ilp', id: msg.id, p: reply.toString('base64') });
+        } finally {
+          this._inflightReplies -= 1;
         }
-        await this._submit({ t: 'ilp', id: msg.id, p: reply.toString('base64') });
         return;
       }
       case 'claim_ack': {
