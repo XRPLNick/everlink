@@ -117,7 +117,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
           if (req.ledger && bridge && bridge.probeLedger) d.ledger = await bridge.probeLedger(ctx).catch((e) => ({ error: String(e && e.message ? e.message : e) }));
           if (diagFile) d.events = diagEvents(diagFile);
           d.process = { node: process.version, pid: process.pid, rssMb: Math.round(process.memoryUsage().rss / 1048576), uptimeS: Math.round(process.uptime()) };
-          try { const patch = JSON.parse(fs.readFileSync(path.join(stateDir, 'patch.cfg'), 'utf8')); d.patch = { consensus: patch.consensus, round_limits: patch.round_limits, npl: patch.npl, unl: (patch.unl || []).length, version: patch.version }; } catch (e) { d.patch = null; }
+          try { const patch = JSON.parse(fs.readFileSync(fs.existsSync(path.join(stateDir, '..', 'patch.cfg')) ? path.join(stateDir, '..', 'patch.cfg') : path.join(stateDir, 'patch.cfg'), 'utf8')); d.patch = { consensus: patch.consensus, round_limits: patch.round_limits, npl: patch.npl, unl: (patch.unl || []).length, version: patch.version }; } catch (e) { d.patch = null; }
           await user.send(JSON.stringify({ t: 'diag', ...d }));
           continue;
         }

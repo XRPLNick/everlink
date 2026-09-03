@@ -1,0 +1,19 @@
+{
+  "connector": {
+    "ilpAddress": "g.nomad.local",
+    "assetCode": "XAH",
+    "assetScale": 6,
+    "feeBps": 25,
+    "feeFlat": "0",
+    "minExpiryWindowMs": 4000,
+    "maxPacketAmount": "1000000000",
+    "probeCreditDrops": "10000",
+    "devFaucetDrops": "0",
+    "masterAddress": "r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC",
+    "evrIssuer": "rEvernodee8dJLaFsujS6q1EiXvZYmHXr8",
+    "reserveDrops": "5000000",
+    "evrReserve": "0.01"
+  },
+  "xahau": { "enabled": true, "network": "mainnet", "rippleServer": "wss://xahau.network", "factsEvery": 3 },
+  "nomad": null
+}

@@ -55,13 +55,20 @@ docker ps --format "{{.Names}}  {{.Status}}  {{.Ports}}"
 Step "node logs"
 foreach ($n in $names) { Write-Host "--- $n"; cmd /c "docker logs --tail 12 $n 2>&1" }
 
-Step "peer demo (Alice on node 1, Bob on node 2)"
-Set-Location $root
-$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
-node deploy\local\demo-real.js wss://localhost:8081 wss://localhost:8082 2>&1 | Tee-Object -FilePath (Join-Path $out "demo.log")
+if ($env:NOMAD_SKIP_DEMO) {
+  Step "ledger-observe soak: letting the cluster run rounds against Xahau for 4 minutes (no demo)"
+  Start-Sleep -Seconds 240
+} else {
+  Step "peer demo (Alice on node 1, Bob on node 2)"
+  Set-Location $root
+  $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
+  node deploy\local\demo-real.js wss://localhost:8081 wss://localhost:8082 2>&1 | Tee-Object -FilePath (Join-Path $out "demo.log")
+}
 
-Step "node logs after the demo"
-foreach ($n in (docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })) { cmd /c "docker logs --since 6m $n > `"$out\$n.log`" 2>&1" }
+Step "node logs after the run"
+foreach ($n in (docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })) { cmd /c "docker logs --since 12m $n > `"$out\$n.log`" 2>&1" }
+Set-Location $root
+node deploy\local\diag-local.js 2>&1 | Tee-Object -FilePath (Join-Path $out "diag.log")
 
 Step "done"
 Stop-Transcript | Out-Null
