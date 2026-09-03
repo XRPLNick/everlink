@@ -46,14 +46,11 @@ Write-Host "user public key $($keys.publicKey)"
 
 Step "3. hosts with free instance slots"
 $hostsFile = Join-Path $here "hosts.txt"
-cmd /c "node `"$evdk`" list -l 60 --no-color > `"$out\hosts-raw.txt`" 2>&1"
-$raw = Get-Content (Join-Path $out "hosts-raw.txt") -Raw
-Write-Host ($raw.Substring(0, [Math]::Min(1500, $raw.Length)))
-$addrs = @([regex]::Matches($raw, "address:\s*'?(r[1-9A-HJ-NP-Za-km-z]{24,34})") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
-if ($addrs.Count -eq 0) { $addrs = @([regex]::Matches($raw, "\b(r[1-9A-HJ-NP-Za-km-z]{24,34})\b") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique) }
-Write-Host "hosts found: $($addrs.Count)"
-if ($addrs.Count -lt 3) { Fail "no-hosts" "fewer than 3 hosts listed on testnet (see out\hosts-raw.txt)" }
-$addrs | Select-Object -First 12 | Out-File -Encoding ascii $hostsFile
+node (Join-Path $here "hosts.js") 12 2>&1 | Tee-Object -FilePath (Join-Path $out "hosts.log")
+$addrs = @()
+if (Test-Path $hostsFile) { $addrs = @(Get-Content $hostsFile | Where-Object { $_ -match "^r[1-9A-HJ-NP-Za-km-z]{24,34}$" }) }
+Write-Host "hosts to use: $($addrs.Count)"
+if ($addrs.Count -lt 3) { Fail "no-hosts" "fewer than 3 hosts with free slots on testnet (see out\hosts.log)" }
 
 Step "4. connector config for this tenant"
 $cfgPath = Join-Path $dist "nomad.config.json"
@@ -66,6 +63,9 @@ $cfg | ConvertTo-Json -Depth 8 | Out-File -Encoding ascii $cfgPath
 Write-Host (Get-Content $cfgPath -Raw)
 
 Step "5. cluster-create (3 nodes, 3 signers, 80% quorum)"
+node (Join-Path $here "balance.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "balance.log")
+$bal = Get-Content (Join-Path $out "balance.json") -Raw | ConvertFrom-Json
+if ([double]$bal.evr -le 0) { Fail "no-evr" "tenant $($tenant.address) has no EVR; leases cannot be bought (see out\balance.log)" }
 $clusterFile = Join-Path $dist "cluster.json"
 if (-not (Test-Path $clusterFile)) {
   $env:EV_HP_OVERRIDE_CFG_PATH = Join-Path $here "hp.cfg.testnet.override"
