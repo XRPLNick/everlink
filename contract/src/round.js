@@ -122,6 +122,13 @@ async function probeLayersInline(server, master) {
     process.stdout.write(line + '\n');
   };
   process.stdout.write(`node ${process.version} pid ${process.pid} uid ${typeof process.getuid === 'function' ? process.getuid() : '?'} cwd ${process.cwd()}\n`);
+  try {
+    const status = fs.readFileSync('/proc/self/status', 'utf8').split('\n').filter((l) => /^(Seccomp|NoNewPrivs|CapEff|Threads|VmRSS|VmHWM):/.test(l)).join(', ');
+    const limits = fs.readFileSync('/proc/self/limits', 'utf8').split('\n').filter((l) => /(open files|address space|cpu time|processes|Max resident)/i.test(l)).map((l) => l.replace(/\s+/g, ' ')).join('; ');
+    const env = Object.keys(process.env).filter((k) => /proxy|NODE_|HOME|PATH|SSL|CERT/i.test(k)).map((k) => `${k}=${String(process.env[k]).slice(0, 60)}`).join(' ');
+    process.stdout.write(`proc: ${status}\nlimits: ${limits}\nenv: ${env}\n`);
+    process.stdout.write(`resolv: ${fs.readFileSync('/etc/resolv.conf', 'utf8').split('\n').filter((l) => l && !l.startsWith('#')).join(' | ')}\n`);
+  } catch (e) { process.stdout.write(`proc info: ${e.message}\n`); }
   await step('dns', async () => (await dns.promises.lookup(host)).address);
   await step('tcp', () => new Promise((res, rej) => { const s = net.connect({ host, port }); s.once('connect', () => { s.destroy(); res('open'); }); s.once('error', rej); }));
   await step('random', async () => { const c = require('crypto'); const t0 = t(); c.randomBytes(32); return `ok ${t() - t0}ms`; });
