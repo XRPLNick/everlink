@@ -1,5 +1,12 @@
 'use strict';
 
+// The bundle carries prebuilt native add-ons from several packages and ncc renames them to
+// avoid name clashes, so `ws` ends up loading the wrong .node file as `bufferutil` and every
+// WebSocket frame longer than 48 bytes throws ("c.mask is not a function") and takes the
+// process down. Tell ws to use its JavaScript implementations before anything is required.
+process.env.WS_NO_BUFFER_UTIL = '1';
+process.env.WS_NO_UTF_8_VALIDATE = '1';
+
 // HotPocket entry point. HotPocket spawns `node index.js` once per consensus round (and
 // once per read request) with the state directory as the working directory; everything
 // this process needs to remember is in that directory.
