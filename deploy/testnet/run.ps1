@@ -110,7 +110,13 @@ Write-Host "EVR limit for leases: $evrLimit"
 $clusterFile = Join-Path $dist "cluster.json"
 if (-not (Test-Path $clusterFile)) {
   $env:EV_HP_OVERRIDE_CFG_PATH = Join-Path $here "hp.cfg.testnet.override"
-  cmd /c "node `"$evdk`" cluster-create $size `"$dist`" /usr/bin/node `"$hostsFile`" -a index.js --signer-count $size --signer-quorum $quorum -m $moments -e $evrLimit --no-color > `"$out\cluster-create.log`" 2>&1"
+  $partial = @(Get-ChildItem (Join-Path $env:TEMP "evdevkit-cluster\partial-cluster-*.json") -ErrorAction SilentlyContinue)
+  if ($partial.Count -gt 0) {
+    Write-Host "resuming the cluster-create that stopped earlier (nodes already acquired)"
+    cmd /c "node `"$(Join-Path $here 'recover-cluster.js')`" $size `"$dist`" `"$hostsFile`" $quorum $evrLimit > `"$out\cluster-create.log`" 2>&1"
+  } else {
+    cmd /c "node `"$evdk`" cluster-create $size `"$dist`" /usr/bin/node `"$hostsFile`" -a index.js --signer-count $size --signer-quorum $quorum -m $moments -e $evrLimit --no-color > `"$out\cluster-create.log`" 2>&1"
+  }
   Get-Content (Join-Path $out "cluster-create.log") -Tail 80
 }
 if (-not (Test-Path $clusterFile)) { Fail "no-cluster" "cluster-create did not produce cluster.json (see out\cluster-create.log)" }
