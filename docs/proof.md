@@ -144,15 +144,36 @@ For honesty: the first cluster, whose settings would have extended in its last h
 second cluster's contract records every housekeeping decision, which is how the lines above
 were read.
 
+## The key is gone
+
+With the second cluster keeping itself alive, the person who had funded the account gave up
+control of it at 20:43:37 UTC:
+
+| UTC | Ledger | Hash | What it is |
+|---|---|---|---|
+| 20:43:37 | 25,544,790 | `F008B4708261BC55A67505004B246181661D89B0CA9040BE765BE2DD23D3C6B0` | `AccountSet` with `SetFlag` 4 (`asfDisableMaster`), signed by the master key — the last thing it ever signed |
+
+The account's flags now include `lsfDisableMaster` (0x00100000; the explorer's account page
+shows the master key as disabled). From here on the only way to sign for
+`r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC` is its signer list: quorum 2 of the three keys
+`rhFnyCHVEi8aMtaJeHKrEGKrtCAhW4J3a3`, `rEez18V1inAmFMNCQJJPgDR6zWhayzsZCf`,
+`rLJ3Bf4ZvwuDbnrLZQVaYJ3rwsm1NfSSeB`, each of which exists only inside one host's HotPocket
+instance and only signs what the contract's consensus produced. The ~12 XAH and ~1 EVR in the
+account are the connector's float now; nobody can sweep them.
+
+`deploy/testnet/retire-master.js` did it, and it refuses to unless the signer list on the
+ledger is exactly the running cluster's and at least a quorum of its nodes answers — with the
+key gone, a dead cluster would mean a dead account.
+
 ## What this does and does not prove
 
 It proves that a HotPocket contract running on three Evernode hosts observed the ledger,
 verified an off-ledger payment-channel claim, routed an ILP/STREAM payment, produced valid
-multisigned Xahau transactions under 2-of-3 consensus, and — on the second cluster — paid for
-its own hosting from its own account, with no operator process anywhere and no human signing
-anything after the cluster was created.
+multisigned Xahau transactions under 2-of-3 consensus, paid for its own hosting from its own
+account, and that no person can now sign for that account: no operator process anywhere, no
+human signing anything after the cluster was created, and no key left that could.
 
-It does not (yet) prove that nobody *could* intervene: the account's master key is still
-enabled and held by the person who funded it. Disabling it (`AccountSet` with
-`asfDisableMaster`) would make the signer list the only control, at the price of locking the
-account for good if the cluster ever dies without paying everything out first.
+What it does not prove is that the hosts cannot collude: two of the three could, in
+principle, sign outside consensus. That is the custodial risk the design note's §5 and §9
+describe, and why the float is pocket money. And a cluster that dies takes its state and its
+account with it: there is no longer anyone who could sweep it.

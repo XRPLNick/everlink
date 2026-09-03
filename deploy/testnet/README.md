@@ -21,13 +21,14 @@ scripts only ever spend from the tenant account when *you* launch the deploy or 
 | `run-mainnet-demo.cmd` | Alice opens a 5 XAH channel to the cluster account, claims 3 XAH, pays Bob 1 XAH over STREAM; the cluster redeems the claim and pays Bob out with multisigned transactions; Alice then asks to close and the cluster closes the channel, returning her unspent 2 XAH | 1 XAH goes Alice -> Bob (fee 0.0025 XAH stays in the cluster account) |
 | `run-mainnet-trace.cmd` | the same payment again (2 XAH channel, 1 XAH claim, 1 XAH over STREAM) with every ILP packet recorded and decoded into `out/stream-trace.txt` / `.json`; Bob is paid out and Alice's channel closed as in the demo | 1 XAH Alice -> Bob (fee 0.0025 XAH) |
 | `run-mainnet-2h.cmd` | `run-mainnet.cmd` with `EVERLINK_MOMENTS=2`: two-hour leases, so that with the config's `lifeIncrMomentMinLimit` 4 the cluster's Nomad loop extends the leases itself right after starting — the self-funding test | lease EVR + whatever the cluster then spends on extensions (0.000017 EVR per host on the run below) |
+| `run-mainnet-retire.cmd` | **irreversible**: disables the tenant's master key (`AccountSet asfDisableMaster`) so the cluster's signer list is the only control of the account; refuses unless the ledger's signer list is the running cluster's and a quorum of nodes answers | one fee; the account's balance is the connector's from then on |
 | `run-mainnet-status.cmd` | asks every node for its ledger height, UNL, contract counters and diagnostics (`out/status.log`) | nothing (read-only) |
 | `run-mainnet-withdraw.cmd` | a saved demo peer names its payout address and asks for its unspent connector credit back (`EVERLINK_PEER`, default alice) | nothing beyond the cluster's own fee |
 
 After the demo the tenant account holds its 10 XAH plus the 3 XAH redeemed minus the ~1 XAH
-paid to Bob and a few drops of fees; the master key still controls it, so you can sweep it
-whenever you like. Retiring that key
-(so no person controls the connector) is deliberately not automated: it is irreversible.
+paid to Bob and a few drops of fees; while the master key still controls it you can sweep it
+whenever you like. Retiring that key (so no person controls the connector) is a separate,
+deliberate launcher because it is irreversible.
 
 Knobs: `EVERLINK_SIZE` (nodes = signers, default 3), `EVERLINK_MOMENTS` (lease length, default 4 =
 4 hours on mainnet), `EVERLINK_EVR_LIMIT`. Mainnet-only config patches applied by `run.ps1`:
@@ -114,6 +115,12 @@ hook parameter, three signers, 600-drop fee) — hashes in `docs/proof.md` — a
 read `nomad lcl 120: 3 nodes [… life 19/19 1133 min left …]`: nineteen hours of hosting bought by
 the contract itself. The bridge now records every Nomad decision (`nomad lcl N: …` and
 `nomad says: …` marks in the diag events), which is what `run-mainnet-status.cmd` shows.
+
+At 20:43 UTC, with all three nodes answering, `run-mainnet-retire.cmd` disabled the master key
+(`AccountSet` `F008B4708261BC55A67505004B246181661D89B0CA9040BE765BE2DD23D3C6B0`, ledger
+25,544,790). The tenant secret in `tenant.mainnet.json` can no longer sign anything; the stages
+that need it (`deploy`, `keys`) are finished for this account, and `demo`, `trace`, `withdraw`
+and `status` never needed it.
 
 Testnet (`wss://hooks-testnet-v3.xrpl-labs.com`) is blocked at `no-evr`: the foundation's
 `giftBetaEvr` requests are answered by hand. Devnet is not live.

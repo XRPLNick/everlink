@@ -22,7 +22,7 @@ if (-not (Test-Path (Join-Path $root "node_modules\xrpl"))) { Fail "no-xrpl" "no
 if (-not (Test-Path (Join-Path $dist "index.js"))) { Fail "no-dist" "contract\dist\index.js missing (npm run build:testnet --workspace contract)" }
 if (-not $env:EV_NETWORK) { $env:EV_NETWORK = "testnet" }
 $net = $env:EV_NETWORK
-$stage = if ($env:EVERLINK_STAGE) { $env:EVERLINK_STAGE } else { "deploy" }   # hosts | keys | status | deploy | demo | trace | withdraw
+$stage = if ($env:EVERLINK_STAGE) { $env:EVERLINK_STAGE } else { "deploy" }   # hosts | keys | status | deploy | demo | trace | withdraw | retire
 Write-Host "Evernode network: $net   stage: $stage"
 if ($stage -eq "hosts") {
   Step "hosts with free instance slots ($net) - read-only"
@@ -60,6 +60,14 @@ if ($net -eq "mainnet") { $b = Get-Content (Join-Path $out "balance.json") -Raw 
 else { Write-Host "tenant $($tenant.address) on $($tenant.server): $($tenant.xah) XAH, $($tenant.evr) EVR" }
 $env:EV_TENANT_SECRET = $tenant.secret
 $env:EV_XAHAUD_SERVER = $tenant.server
+
+if ($stage -eq "retire") {
+  Step "retire the tenant master key on $net (stage=retire) - irreversible"
+  if (-not (Test-Path (Join-Path $dist "cluster.json"))) { Fail "no-cluster" "no contract\dist\cluster.json - the cluster holding the signer keys must be deployed and alive" }
+  $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
+  node (Join-Path $here "retire-master.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "retire-master.log")
+  Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
+}
 
 Step "2. user keys"
 $keysFile = Join-Path $here "user.$net.keys.json"

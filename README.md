@@ -17,8 +17,10 @@ cluster redeemed her channel and paid Bob 0.996499 XAH with transactions signed 
 signer keys under consensus (2-of-3), then closed the channel on her request and returned her
 unspent 2 XAH. A second cluster, deployed the same evening on three new hosts with two-hour
 leases, then extended its own leases without anyone asking — three EVR payments to its hosts
-co-signed by its three nodes — buying itself nineteen more hours of hosting for 0.000051 EVR.
-The deterministic core, the peer plugin, the multi-node simulator and the STREAM
+co-signed by its three nodes — buying itself nineteen more hours of hosting for 0.000051 EVR. With that proven, the
+account's master key was disabled (`AccountSet asfDisableMaster`, ledger 25,544,790): the
+cluster's 2-of-3 signer list is now the only thing that can move funds in it — nobody runs
+the connector, and nobody controls its account. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
 end-to-end are tested (`npm test`, 20 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
@@ -118,8 +120,8 @@ Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `ack`, `err`
 * Single asset (XAH). Multi-asset routing needs per-asset ledgers and a rate source.
 * One channel per peer direction is assumed; channel key rotation is not handled.
 * everpocket's own bookkeeping (`transactions.json`) is written from unvoted ledger queries.
-* The tenant's master key still controls the cluster account alongside the SignerList; retiring
-  it (`SetRegularKey` + `asfDisableMaster`) is a deliberate manual step.
+* A cluster's state ends with its last lease, and with the master key retired nobody can sweep
+  a dead cluster's account: peers' credit needs a payout sweep or a hand-over before expiry.
 * Peers' HotPocket identities are their account at the connector: lose the key, lose the credit.
 
 ## License

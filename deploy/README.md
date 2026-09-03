@@ -65,8 +65,9 @@ give it an EVR trust line and some EVR (hosts are paid in EVR); peers connect to
 user port with `ilp-plugin-hotpocket`, open a payment channel *to* the account and stream
 claims. With `nomad` configured, the cluster extends its own leases and replaces dead nodes
 from the account (everpocket `NomadContext`). Retiring the tenant's master key
-(`SetRegularKey` + `asfDisableMaster`) once the SignerList is in place is what makes the
-cluster the only signer; it is deliberately left to a person, because it is irreversible.
+(`AccountSet asfDisableMaster`, `run-mainnet-retire.cmd`) once the SignerList is in place and
+the cluster is keeping itself alive is what makes the cluster the only signer; it is a
+separate launcher a person runs on purpose, because it is irreversible.
 
 ## What to watch
 
