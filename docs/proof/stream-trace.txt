@@ -1,4 +1,4 @@
-ILP/STREAM packet trace through the Nomad Connector cluster on Xahau mainnet, 2026-09-03T05:51:09.635Z
+ILP/STREAM packet trace through the Everlink cluster on Xahau mainnet, 2026-09-03T05:51:09.635Z
 cluster account r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC; nodes evernode4.kimchigraphics.com:26231, zeb-a-nodew-01.xahaud.xyz:26203, evernode12.laurenka.nl:26311
 Every line is a real ILP packet (RFC 27) as seen by the two peers' plugins, with the STREAM frames inside decrypted (RFC 29).
 # 1  05:48:50.290  Bob -> cluster       PREPARE  ILDCP: "what is my ILP address?" (peer.config)
