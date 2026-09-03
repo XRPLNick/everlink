@@ -22,7 +22,9 @@ unspent 2 XAH. The deterministic core, the peer plugin, the multi-node simulator
 end-to-end are tested (`npm test`, 19 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
-[docs/proof.md](docs/proof.md).
+[docs/proof.md](docs/proof.md), together with a packet-level trace of a payment through the
+cluster: every ILP Prepare/Fulfill/Reject, the STREAM frames inside them decrypted, every
+fulfillment hashed against its condition ([docs/proof/stream-trace.txt](docs/proof/stream-trace.txt)).
 
 ```
 npm install --ignore-scripts      # blake3 (a hotpocket-js-client dep) tries to download a native build otherwise

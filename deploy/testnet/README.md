@@ -69,6 +69,11 @@ credit stayed under her (then ephemeral) HotPocket identity; the demo now saves 
 identities in `peers.mainnet.json` and withdraws leftover credit at the end
 (`run-mainnet-withdraw.cmd` does it on its own for a saved peer).
 
+`run-mainnet-trace.cmd` (`trace-stream.js`) repeats a 1 XAH payment and records every ILP
+packet both peers see — decoded with `ilp-packet`, STREAM frames decrypted with the receiver's
+secret, fulfillments checked against conditions — into `out/stream-trace.txt` / `.json`. The
+trace of the 05:48 UTC run is in `docs/proof/`; `docs/proof.md` walks through it.
+
 What the seven failed deployments before it found, all fixed in this kit:
 
 * Windows PowerShell 5.1 read em dashes in `run.ps1` as quotes (ASCII + BOM now) and its

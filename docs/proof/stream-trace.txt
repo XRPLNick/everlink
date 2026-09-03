@@ -1,0 +1,146 @@
+ILP/STREAM packet trace through the Nomad Connector cluster on Xahau mainnet, 2026-09-03T05:51:09.635Z
+cluster account r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC; nodes evernode4.kimchigraphics.com:26231, zeb-a-nodew-01.xahaud.xyz:26203, evernode12.laurenka.nl:26311
+Every line is a real ILP packet (RFC 27) as seen by the two peers' plugins, with the STREAM frames inside decrypted (RFC 29).
+# 1  05:48:50.290  Bob -> cluster       PREPARE  ILDCP: "what is my ILP address?" (peer.config)
+                                        expires 2026-09-03T05:49:50.290Z  condition 66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925
+     05:49:02.285  cluster -> Bob       FULFILL  fulfillment 0000000000000000000000000000000000000000000000000000000000000000  sha256 == condition: yes  (11995 ms)
+                                        ILDCP answer: address g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5, asset XAH scale 6
+
+# 2  05:49:02.286  Alice -> cluster     PREPARE  ILDCP: "what is my ILP address?" (peer.config)
+                                        expires 2026-09-03T05:50:02.286Z  condition 66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925
+     05:49:14.265  cluster -> Alice     FULFILL  fulfillment 0000000000000000000000000000000000000000000000000000000000000000  sha256 == condition: yes  (11979 ms)
+                                        ILDCP answer: address g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3, asset XAH scale 6
+
+# 3  05:49:14.267  Alice -> cluster     PREPARE         1 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:44.267Z  condition 2b961ade15c1f215dfd9ebb85b01b3c5795b4fe7d001d71a2bfc1d73ced100aa
+                                        STREAM seq 1: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:38.245  cluster -> Alice     REJECT F99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5  (23978 ms)
+                                        STREAM seq 1: ConnectionMaxData(maxOffset=65534), ConnectionMaxStreamId(maxStreamId=20), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+
+# 4  05:49:14.267  Alice -> cluster     PREPARE      1000 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:44.267Z  condition 8e624ddfc1e0b2867ae2d0bab4ec04568d880602ddcc6fbb70cfadee2c022c7a
+                                        STREAM seq 2: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:38.245  cluster -> Alice     REJECT F99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5  (23978 ms)
+                                        STREAM seq 2 prepareAmount 997: ConnectionMaxData(maxOffset=65534), ConnectionMaxStreamId(maxStreamId=20), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6), ConnectionMaxStreamId(maxStreamId=20), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+
+# 5  05:49:14.268  Alice -> cluster     PREPARE   1000000 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:44.268Z  condition db48493b7e6364537139d31f3c42af8ccb22f0c3013d6d9ac4caddb32754327e
+                                        STREAM seq 3: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:38.245  cluster -> Alice     REJECT F99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5  (23977 ms)
+                                        STREAM seq 3 prepareAmount 997500: ConnectionMaxData(maxOffset=65534)
+
+# 6  05:49:14.268  Alice -> cluster     PREPARE  1000000000 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:44.268Z  condition 4ff12774178ba56bfa9af1275d6c8c71d557401580aedebe3f6cca3c920f405b
+                                        STREAM seq 4: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:26.284  cluster -> Alice     REJECT T04 from g.nomad "insufficient prepaid balance; send a payment-channel claim"  (12016 ms)
+
+# 7  05:49:14.268  Alice -> cluster     PREPARE  1000000000000 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:44.268Z  condition c23c2a1494c178426663e88d65d48bd3547c7ac0a98d3e8b4530c088dd6fe0b0
+                                        STREAM seq 5: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:26.284  cluster -> Alice     REJECT F08 from g.nomad "packet exceeds maximum amount"  (12016 ms)
+
+# 8  05:49:26.285  cluster -> Bob       PREPARE         0 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:36.267Z  condition 2b961ade15c1f215dfd9ebb85b01b3c5795b4fe7d001d71a2bfc1d73ced100aa
+                                        STREAM seq 1: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:26.287  Bob -> cluster       REJECT F99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5  (2 ms)
+                                        STREAM seq 1: ConnectionMaxData(maxOffset=65534), ConnectionMaxStreamId(maxStreamId=20), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+
+# 9  05:49:26.285  cluster -> Bob       PREPARE       997 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:36.267Z  condition 8e624ddfc1e0b2867ae2d0bab4ec04568d880602ddcc6fbb70cfadee2c022c7a
+                                        STREAM seq 2: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:26.287  Bob -> cluster       REJECT F99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5  (2 ms)
+                                        STREAM seq 2 prepareAmount 997: ConnectionMaxData(maxOffset=65534), ConnectionMaxStreamId(maxStreamId=20), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6), ConnectionMaxStreamId(maxStreamId=20), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+
+#10  05:49:26.285  cluster -> Bob       PREPARE    997500 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:49:36.268Z  condition db48493b7e6364537139d31f3c42af8ccb22f0c3013d6d9ac4caddb32754327e
+                                        STREAM seq 3: ConnectionNewAddress(sourceAccount=g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3), ConnectionAssetDetails(sourceAssetCode=XAH, sourceAssetScale=6)
+     05:49:26.287  Bob -> cluster       REJECT F99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5  (2 ms)
+                                        STREAM seq 3 prepareAmount 997500: ConnectionMaxData(maxOffset=65534)
+
+#11  05:49:38.256  Alice -> cluster     PREPARE   1000000 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:50:08.256Z  condition 90b8c6a12052a145250a310c8c5225d8ae62347a8e2ba4d63b24ae305976b3ba
+                                        STREAM seq 6 prepareAmount 977550: StreamMaxMoney(streamId=1, receiveMax=0, totalReceived=0), StreamMaxData(streamId=1, maxOffset=16384), StreamMoney(streamId=1, shares=1000000)
+     05:50:02.289  cluster -> Alice     FULFILL  fulfillment 00487508634c45804f9f2a12b21773f79f8bb82af38e36470b28227f2d88e5d9  sha256 == condition: yes  (24033 ms)
+                                        STREAM seq 6 prepareAmount 997500: ConnectionMaxData(maxOffset=65534), StreamMaxMoney(streamId=1, receiveMax=100000000, totalReceived=997500), StreamMaxData(streamId=1, maxOffset=16384)
+
+#12  05:49:50.286  cluster -> Bob       PREPARE    997500 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:50:00.256Z  condition 90b8c6a12052a145250a310c8c5225d8ae62347a8e2ba4d63b24ae305976b3ba
+                                        STREAM seq 6 prepareAmount 977550: StreamMaxMoney(streamId=1, receiveMax=0, totalReceived=0), StreamMaxData(streamId=1, maxOffset=16384), StreamMoney(streamId=1, shares=1000000)
+     05:49:50.287  Bob -> cluster       FULFILL  fulfillment 00487508634c45804f9f2a12b21773f79f8bb82af38e36470b28227f2d88e5d9  sha256 == condition: yes  (1 ms)
+                                        STREAM seq 6 prepareAmount 997500: ConnectionMaxData(maxOffset=65534), StreamMaxMoney(streamId=1, receiveMax=100000000, totalReceived=997500), StreamMaxData(streamId=1, maxOffset=16384)
+
+#13  05:49:50.286  Bob -> cluster       PREPARE         1 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:20.286Z  condition ec279e4dfe7e526220238cac8f9b9ff28e36b10a7311fb0c6dcfa64c6dd2c490
+                                        STREAM seq 1: (no frames)
+     05:50:14.282  cluster -> Bob       REJECT F99 from g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3  (23996 ms)
+                                        STREAM seq 1: ConnectionMaxData(maxOffset=65534)
+
+#14  05:49:50.287  Bob -> cluster       PREPARE      1000 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:20.287Z  condition 1b4bfbabb7f1ee2fece574ac2078f42f6e5cc39dca41b48e829976ab8f8002c1
+                                        STREAM seq 2: (no frames)
+     05:50:14.282  cluster -> Bob       REJECT F99 from g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3  (23995 ms)
+                                        STREAM seq 2 prepareAmount 997: ConnectionMaxData(maxOffset=65534)
+
+#15  05:49:50.287  Bob -> cluster       PREPARE   1000000 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:20.287Z  condition c71c764b766d70d35a8e1d87401cc84453648ef8bd91d25e4b76afe8fd5dc636
+                                        STREAM seq 3: (no frames)
+     05:50:02.287  cluster -> Bob       REJECT T04 from g.nomad "insufficient prepaid balance; send a payment-channel claim"  (12000 ms)
+
+#16  05:49:50.287  Bob -> cluster       PREPARE  1000000000 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:20.287Z  condition 081c6d26b3ca4aa5263b969152b9242a8d69f7d3c166c3111556d9331a8ab979
+                                        STREAM seq 4: (no frames)
+     05:50:02.287  cluster -> Bob       REJECT T04 from g.nomad "insufficient prepaid balance; send a payment-channel claim"  (12000 ms)
+
+#17  05:49:50.287  Bob -> cluster       PREPARE  1000000000000 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:20.287Z  condition 01e112b9c4495aad2c91085f5aa3e14e7c79ceca8ba21823a231e195f8c5bf00
+                                        STREAM seq 5: (no frames)
+     05:50:02.287  cluster -> Bob       REJECT F08 from g.nomad "packet exceeds maximum amount"  (12000 ms)
+
+#18  05:50:02.288  cluster -> Alice     PREPARE         0 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:12.286Z  condition ec279e4dfe7e526220238cac8f9b9ff28e36b10a7311fb0c6dcfa64c6dd2c490
+                                        STREAM seq 1: (no frames)
+     05:50:02.290  Alice -> cluster     REJECT F99 from g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3  (2 ms)
+                                        STREAM seq 1: ConnectionMaxData(maxOffset=65534)
+
+#19  05:50:02.289  cluster -> Alice     PREPARE       997 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:12.287Z  condition 1b4bfbabb7f1ee2fece574ac2078f42f6e5cc39dca41b48e829976ab8f8002c1
+                                        STREAM seq 2: (no frames)
+     05:50:02.290  Alice -> cluster     REJECT F99 from g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3  (1 ms)
+                                        STREAM seq 2 prepareAmount 997: ConnectionMaxData(maxOffset=65534)
+
+#20  05:50:02.300  Alice -> cluster     PREPARE         0 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:50:32.300Z  condition fa4851719e1a973348491e399cfab55c75de873f6396a1ff91fa1b2c9febca0e
+                                        STREAM seq 7: StreamMaxMoney(streamId=1, receiveMax=0, totalReceived=0), StreamMaxData(streamId=1, maxOffset=16384)
+     05:50:26.272  cluster -> Alice     REJECT T99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5 "Shutting down server"  (23972 ms)
+
+#21  05:50:14.282  cluster -> Bob       PREPARE         0 drops  to g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5.7WI1QrGrlVJ9giRrNNYFY6A0sDpAHmJmCKxfHDzm7V65tWTnwkotIwSMc2wJmORGlQ
+                                        expires 2026-09-03T05:50:24.300Z  condition fa4851719e1a973348491e399cfab55c75de873f6396a1ff91fa1b2c9febca0e
+                                        STREAM seq 7: StreamMaxMoney(streamId=1, receiveMax=0, totalReceived=0), StreamMaxData(streamId=1, maxOffset=16384)
+     05:50:14.282  Bob -> cluster       REJECT T99 from g.nomad.eda9b3ae91048e57e18adcb8fb92eae36e31ce3c264a27b60e4c20efc1c3cb98d5 "Shutting down server"  (0 ms)
+
+#22  05:50:14.290  Bob -> cluster       PREPARE         0 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:44.290Z  condition ff05b3c2685525c6f875891af3ed9e6965f035340829ab2ecbcb500a3b3149a9
+                                        STREAM seq 6: StreamClose(streamId=1, errorCode=1, errorMessage=)
+     05:50:38.283  cluster -> Bob       FULFILL  fulfillment 9c20d3f8b380d93d1c985b88a8a2b26abadba0fd856141b12362ce9b768e15d7  sha256 == condition: yes  (23993 ms)
+                                        STREAM seq 6: ConnectionMaxData(maxOffset=65534), StreamMaxMoney(streamId=1, receiveMax=0, totalReceived=0), StreamMaxData(streamId=1, maxOffset=16384), ConnectionMaxStreamId(maxStreamId=22)
+
+#23  05:50:26.272  cluster -> Alice     PREPARE         0 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:50:36.290Z  condition ff05b3c2685525c6f875891af3ed9e6965f035340829ab2ecbcb500a3b3149a9
+                                        STREAM seq 6: StreamClose(streamId=1, errorCode=1, errorMessage=)
+     05:50:26.273  Alice -> cluster     FULFILL  fulfillment 9c20d3f8b380d93d1c985b88a8a2b26abadba0fd856141b12362ce9b768e15d7  sha256 == condition: yes  (1 ms)
+                                        STREAM seq 6: ConnectionMaxData(maxOffset=65534), StreamMaxMoney(streamId=1, receiveMax=0, totalReceived=0), StreamMaxData(streamId=1, maxOffset=16384), ConnectionMaxStreamId(maxStreamId=22)
+
+#24  05:50:38.297  Bob -> cluster       PREPARE         0 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:51:08.297Z  condition 30f169d88ad9726b8373a4f23947e897b90380247fe2ab2e228cace873601e95
+                                        STREAM seq 8: ConnectionClose(errorCode=1, errorMessage=)
+     05:51:05.288  cluster -> Bob       REJECT F99 from g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3  (26991 ms)
+                                        STREAM seq 8: ConnectionMaxData(maxOffset=65534)
+
+#25  05:50:53.270  cluster -> Alice     PREPARE         0 drops  to g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3
+                                        expires 2026-09-03T05:51:00.297Z  condition 30f169d88ad9726b8373a4f23947e897b90380247fe2ab2e228cace873601e95
+                                        STREAM seq 8: ConnectionClose(errorCode=1, errorMessage=)
+     05:50:53.271  Alice -> cluster     REJECT F99 from g.nomad.eda7f63b80fd2070c4546070f45f2406e83e5dd8546947e26024660ccb825af5e3  (1 ms)
+                                        STREAM seq 8: ConnectionMaxData(maxOffset=65534)
+
+25 Prepares (Bob: 8 sent into the cluster, 5 delivered by the cluster; Alice: 8 sent into the cluster, 4 delivered by the cluster); 6 fulfilled, 19 rejected - STREAM's rate probes, ILDCP has its own reply, and the connection close are meant to be rejected.
+Fulfilled money leaving senders: 1000000 drops; fulfilled money reaching receivers: 997500 drops; the 2500 drops in between are the connector's fee. Every fulfillment hashes to its condition.

@@ -57,6 +57,45 @@ signer list, whoever controls those two Dutch machines could in principle sign f
 outside the contract's consensus. The host picker now spreads by resolved /24 network as well
 as by domain (`deploy/testnet/hosts.js`) so the next cluster lands on three networks.
 
+## The ILP/STREAM part: a packet trace
+
+The settlement is on the ledger; the payment itself is not, by design — that is what ILP is
+for. So the proof for that layer is the packets. `deploy/testnet/trace-stream.js` ran a second
+payment through the live cluster at 05:48–05:51 UTC and recorded every ILP packet the two
+peers' plugins saw, decoded with the standard `ilp-packet` library (RFC 27), with the STREAM
+frames inside decrypted using the receiver's shared secret (RFC 29) and every fulfillment
+hashed against its condition. Nothing in the connector or the peers was modified for it: the
+tracer wraps the plugin's `sendData` and data handler and the unmodified `ilp-protocol-stream`
+does the rest.
+
+- [`stream-trace.txt`](proof/stream-trace.txt) — the readable trace, 25 Prepares.
+- [`stream-trace.json`](proof/stream-trace.json) — the same with the raw packets (base64), so
+  anyone can re-decode them with `ilp-packet` and re-check the SHA-256s.
+
+What it shows, in order: both peers ask the connector for their ILP address with ILDCP
+(`peer.config`, RFC 31) and get `g.nomad.<their HotPocket public key>`; Alice's STREAM client
+sends its rate probes (1, 1 000, 1 000 000, 10⁹ and 10¹² drops, all with unfulfillable
+conditions — the 10⁹ one is refused by the connector as `T04 insufficient prepaid balance`, the
+10¹² one as `F08 packet exceeds maximum amount`, the rest reach Bob and come back `F99` with
+STREAM's `ConnectionAssetDetails(XAH, 6)` and limits inside); then the money: packet #11,
+**1 000 000 drops** from Alice with a `StreamMoney(streamId=1, shares=1000000)` frame, forwarded
+to Bob as packet #12 for **997 500 drops** (the 0.25 % spread), fulfilled by Bob with
+`00487508…e5d9`, whose SHA-256 is the condition `90b8c6a1…b3ba` Alice put on it; the fulfill
+travels back and Alice's `outgoing_money` fires 24 s after she sent the Prepare (two consensus
+rounds per hop, plus waiting for the round that observes the ledger). Then Bob's own probes
+towards Alice, the `StreamClose` and `ConnectionClose` frames, and the summary line:
+fulfilled money leaving senders 1 000 000 drops, reaching receivers 997 500 drops, the
+2 500 drops in between being the connector's fee.
+
+That payment settled too, in the same way as the first: channel
+`6BC4CFE542C6A6B979CD4E3FAEF4402CC415FAB31A28DBCF9C0B1CF43F9395DD` (Alice, 2 XAH), redeem
+`EAC14759657316EDBC983C8788A45898AC82D586A905ED51AA1287D619100CFA` (1 XAH, 3 signers), payout
+`9B4C702C07EC3B36ED97E2240033A2701C2D53357D38F2937075C98C3CD46607` (0.996499 XAH to Bob, 3
+signers, submitted the moment the fulfill came back), close
+`BDB4E2EC7F54AC6071AD8EE9BDDE50BB9EE6D0AE51C1AD20C1DF2D576FCBCDA4` (Alice's unspent 1 XAH
+returned). The connector's own counters, readable from any node, went from `claims 1, fulfills 2,
+prepares 14, rejects 12` to the new totals at the same time.
+
 ## While the lease lasts
 
 The lease runs until about 08:26 UTC on 3 September 2026. Until then anyone can connect to the
