@@ -12,3 +12,4 @@ deploy/testnet/tenant.*.json
 deploy/testnet/user.*.keys.json
 deploy/testnet/hosts.*.txt
 deploy/testnet/peers.*.json
+contract/bundle/
