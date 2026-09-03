@@ -77,7 +77,7 @@ contract/            the HotPocket contract (bundled with ncc for deployment)
 plugin/              ilp-plugin-hotpocket: the ilp-plugin interface over the HotPocket user channel
 sim/                 in-process HotPocket simulator + mock Xahau (channels, multisig, DEX, leases)
 test/                unit, simulator, STREAM end-to-end and production-bridge tests
-deploy/              hpdevkit / evdevkit instructions
+deploy/              local (hpdevkit) and Evernode (evdevkit) kits; deploy/windows/ has the double-click launchers
 docs/                design document, docs/proof.md and the evidence (explorer screenshots, packet trace)
 ```
 

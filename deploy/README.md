@@ -1,6 +1,6 @@
 # Deploying Everlink
 
-Two kits, both driven by PowerShell scripts with `.cmd` launchers in the repository root
+Two kits, both driven by PowerShell scripts with `.cmd` launchers in `deploy/windows/`
 (they were written on Windows; every step is a plain `node` or dev-kit command and ports to a
 shell script in minutes). Everything a run produces goes under `deploy/<kit>/out/`, which is
 git-ignored, as are all key files.

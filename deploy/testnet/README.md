@@ -1,6 +1,6 @@
 # Everlink on Evernode (testnet or mainnet)
 
-One PowerShell script, `deploy/testnet/run.ps1`, driven by the launchers in the repo root.
+One PowerShell script, `deploy/testnet/run.ps1`, driven by the launchers in `deploy/windows/` (double-click them, or set the same variables and run the script from any shell).
 `EV_NETWORK` picks the network (testnet, devnet, mainnet), `EVERLINK_STAGE` the stage
 (`hosts`, `keys`, `status`, `deploy`, `demo`, `trace`, `withdraw`). Everything is logged under `deploy/testnet/out/`; when a
 stage fails, the `DONE` file names the reason (`no-tenant`, `no-xah`, `no-evr`, `no-hosts`,
