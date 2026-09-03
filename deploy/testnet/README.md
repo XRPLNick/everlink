@@ -2,7 +2,7 @@
 
 One PowerShell script, `deploy/testnet/run.ps1`, driven by the launchers in the repo root.
 `EV_NETWORK` picks the network (testnet, devnet, mainnet), `NOMAD_STAGE` the stage
-(`hosts`, `keys`, `status`, `deploy`, `demo`, `withdraw`). Everything is logged under `deploy/testnet/out/`; when a
+(`hosts`, `keys`, `status`, `deploy`, `demo`, `trace`, `withdraw`). Everything is logged under `deploy/testnet/out/`; when a
 stage fails, the `DONE` file names the reason (`no-tenant`, `no-xah`, `no-evr`, `no-hosts`,
 `no-cluster`, ...). Fix the cause and run again: finished stages are skipped.
 
@@ -19,6 +19,7 @@ scripts only ever spend from the tenant account when *you* launch the deploy or 
 | `run-mainnet.cmd` | adds an EVR trust line to the tenant if missing (fee only) and stops with `no-evr` until the tenant holds EVR; then `evdevkit cluster-create`: buys 3 leases for 4 moments (about 0.000012 EVR on the cheapest reputable hosts, capped by `NOMAD_EVR_LIMIT`, default: the whole EVR balance), installs a 3-signer SignerList (2-of-3) on the tenant account and uploads the contract | lease EVR + fees; ~2 XAH of reserve gets locked (SignerList, trust line, 3 lease tokens) |
 | *you* | send **1 EVR** to the tenant once the trust line exists (any amount works; the leases cost microscopic sums) | 1 EVR |
 | `run-mainnet-demo.cmd` | Alice opens a 5 XAH channel to the cluster account, claims 3 XAH, pays Bob 1 XAH over STREAM; the cluster redeems the claim and pays Bob out with multisigned transactions; Alice then asks to close and the cluster closes the channel, returning her unspent 2 XAH | 1 XAH goes Alice -> Bob (fee 0.0025 XAH stays in the cluster account) |
+| `run-mainnet-trace.cmd` | the same payment again (2 XAH channel, 1 XAH claim, 1 XAH over STREAM) with every ILP packet recorded and decoded into `out/stream-trace.txt` / `.json`; Bob is paid out and Alice's channel closed as in the demo | 1 XAH Alice -> Bob (fee 0.0025 XAH) |
 
 After the demo the tenant account holds its 10 XAH + 3 XAH redeemed - 0.9975 XAH paid to Bob;
 the master key still controls it, so you can sweep it whenever you like. Retiring that key

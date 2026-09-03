@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "test": "node --test --test-timeout=60000 test/*.test.js",
-    "test:core": "node --test test/core.test.js test/settlement.test.js",
+    "test:core": "node --test test/core.test.js",
     "test:e2e": "node --test test/e2e-stream.test.js",
     "demo": "node sim/demo.js",
     "build:contract": "npm run build --workspace contract"

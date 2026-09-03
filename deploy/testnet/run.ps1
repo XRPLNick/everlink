@@ -34,16 +34,6 @@ if ($stage -eq "status") {
   node (Join-Path $here "status.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "status.log")
   Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
 }
-if ($stage -eq "xrpltest") {
-  Step "everpocket XrplContext.init outside HotPocket: plain node_modules, then the ncc bundle"
-  Set-Location $out
-  node (Join-Path $here "xrpl-init-test.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "xrpltest-plain.log")
-  if (Test-Path (Join-Path $out "xrpl-test-bundle\index.js")) {
-    node (Join-Path $out "xrpl-test-bundle\index.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "xrpltest-bundle.log")
-  } else { Write-Host "no bundle at out\xrpl-test-bundle (build it with ncc from the Linux side)" }
-  Set-Location $root
-  Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
-}
 if ($stage -eq "keys") {
   Step "mainnet key pairs (tenant, Alice, Bob) - nothing is funded or sent"
   node (Join-Path $here "gen-accounts.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "keys.log")

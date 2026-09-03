@@ -17,10 +17,9 @@ docker version --format "docker server {{.Server.Version}}"
 if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: docker is not reachable."; "no-docker" | Out-File (Join-Path $out "DONE"); Stop-Transcript | Out-Null; exit 1 }
 
 Step "hpdevkit"
-# npm on this machine is broken ("Class extends value undefined"), so hpdevkit is not installed
-# with npm here: it was installed into node_modules from the Linux side of the Cowork bridge
-# (--ignore-scripts: its evernode-js-client dependency would otherwise try a native build) and
-# is run straight through node. hpdevkit is a self-contained ncc bundle that only shells out to docker.
+# hpdevkit is run straight through node from node_modules (install it with --ignore-scripts:
+# its evernode-js-client dependency would otherwise try a native build). It is a self-contained
+# ncc bundle that only shells out to docker.
 $hpkIndex = Join-Path $root "node_modules\hpdevkit\index.js"
 if (-not (Test-Path $hpkIndex)) { Write-Host "ERROR: node_modules\hpdevkit\index.js is missing"; "no-hpdevkit" | Out-File (Join-Path $out "DONE"); Stop-Transcript | Out-Null; exit 1 }
 cmd /c "node `"$hpkIndex`" version 2>&1"

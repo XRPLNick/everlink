@@ -19,7 +19,7 @@ paid Bob 1 XAH with the unmodified `ilp-protocol-stream` (24 s at 3-second round
 cluster redeemed her channel and paid Bob 0.996499 XAH with transactions signed by its three
 signer keys under consensus (2-of-3), then closed the channel on her request and returned her
 unspent 2 XAH. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
-end-to-end are tested (`npm test`, 19 tests); the local `hpdevkit` run is in `deploy/local/`,
+end-to-end are tested (`npm test`, 20 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
 [docs/proof.md](docs/proof.md), together with a packet-level trace of a payment through the
@@ -78,7 +78,7 @@ plugin/              ilp-plugin-hotpocket: the ilp-plugin interface over the Hot
 sim/                 in-process HotPocket simulator + mock Xahau (channels, multisig, DEX, leases)
 test/                unit, simulator, STREAM end-to-end and production-bridge tests
 deploy/              hpdevkit / evdevkit instructions
-docs/                design document
+docs/                design document, docs/proof.md and the evidence (explorer screenshots, packet trace)
 ```
 
 ## Peer protocol (JSON over the HotPocket user channel)
@@ -118,3 +118,7 @@ Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `ack`, `err`
 * The tenant's master key still controls the cluster account alongside the SignerList; retiring
   it (`SetRegularKey` + `asfDisableMaster`) is a deliberate manual step.
 * Peers' HotPocket identities are their account at the connector: lose the key, lose the credit.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

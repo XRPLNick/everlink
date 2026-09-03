@@ -14,3 +14,12 @@ deploy/testnet/hosts.*.txt
 deploy/testnet/peers.*.json
 contract/bundle/
 contract/dist-local/
+local/
+sashi-bundle-*/
+*.key
+*.bundle
+.env
+Thumbs.db
+deploy/testnet/hosts-raw.txt
+contract/*.key
+evdevkit-cluster/
