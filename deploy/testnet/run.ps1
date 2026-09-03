@@ -22,11 +22,16 @@ if (-not (Test-Path (Join-Path $root "node_modules\xrpl"))) { Fail "no-xrpl" "no
 if (-not (Test-Path (Join-Path $dist "index.js"))) { Fail "no-dist" "contract\dist\index.js missing (npm run build:testnet --workspace contract)" }
 if (-not $env:EV_NETWORK) { $env:EV_NETWORK = "testnet" }
 $net = $env:EV_NETWORK
-$stage = if ($env:NOMAD_STAGE) { $env:NOMAD_STAGE } else { "deploy" }   # hosts | keys | deploy | demo
+$stage = if ($env:NOMAD_STAGE) { $env:NOMAD_STAGE } else { "deploy" }   # hosts | keys | status | deploy | demo
 Write-Host "Evernode network: $net   stage: $stage"
 if ($stage -eq "hosts") {
   Step "hosts with free instance slots ($net) - read-only"
   node (Join-Path $here "hosts.js") 20 2>&1 | Tee-Object -FilePath (Join-Path $out "hosts.log")
+  Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
+}
+if ($stage -eq "status") {
+  Step "cluster status ($net) - read-only"
+  node (Join-Path $here "status.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "status.log")
   Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
 }
 if ($stage -eq "keys") {

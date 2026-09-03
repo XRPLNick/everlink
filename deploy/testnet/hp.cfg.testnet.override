@@ -2,7 +2,8 @@
     "contract": {
         "consensus": {
             "mode": "public",
-            "roundtime": 3000
+            "roundtime": 3000,
+            "threshold": 60
         },
         "npl": {
             "mode": "private"
