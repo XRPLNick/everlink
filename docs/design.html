@@ -144,9 +144,9 @@
   <h1>Nomad Connector</h1>
   <p class="dek">An Interledger connector that runs as a HotPocket contract on Evernode: nobody operates it, peers pay for it as they use it, and it pays its own hosts in EVR from a Xahau account only the cluster can sign for.</p>
   <div class="meta">
-    <span><span class="status">prototype</span></span>
-    <span>date <b>2 September 2026</b></span>
-    <span>code <b>nomad-connector.zip</b> (contract · plugin · simulator · 18 tests · real 3-node cluster run)</span>
+    <span><span class="status">ran on Evernode mainnet</span></span>
+    <span>date <b>3 September 2026</b></span>
+    <span>code <b>nomad-connector</b> (contract · plugin · simulator · 19 tests · local cluster · Evernode mainnet settlement)</span>
     <span>origin <b>forum.interledger.org/t/126</b>, March 2019</span>
   </div>
 </header>
@@ -154,8 +154,8 @@
 <section class="prose" id="summary">
   <h2><span class="n">§1</span>Summary</h2>
   <p class="lead">The 2019 idea is buildable in 2026, and the half of it that sounded hardest — a contract with no operator that keeps itself hosted — is the half Evernode has already solved. What remains hard is that a connector is custodial, and that the law has moved from "is it decentralised?" to "who has control?".</p>
-  <p>This note describes a working prototype: a deterministic ILP connector core that runs unchanged on a simulated three-node HotPocket cluster <em>and</em> on a real one (three <code>hpdevkit</code> nodes in Docker, where the unmodified <code>ilp-protocol-stream</code> library paid 1 XAH from a peer on node 1 to a peer on node 2 in 5.8 s), an <code>ilp-plugin-hotpocket</code> that makes that possible, a settlement design built on Xahau payment channels and the cluster's multisig account, and a treasury loop that keeps the hosts paid in EVR. The bridge to Xahau is written against everpocket's real API and exercised through a fake; it has not yet been run against Xahau testnet.</p>
-  <p>Recommendation: treat this as an alternative ILP network for crypto-native peers, not as a node on the Interledger Foundation's Rafiki network; engineer every remaining design decision around the "non-controlling" test now in front of the U.S. Senate; and take the next step on Xahau testnet with three real hosts before adding liquidity providers or a second asset.</p>
+  <p>This note describes a working prototype that has now run for real: a deterministic ILP connector core that runs unchanged on a simulated three-node HotPocket cluster, on a local <code>hpdevkit</code> cluster, and on <strong>three Evernode mainnet hosts run by three operators</strong>, where on 3 September 2026 the unmodified <code>ilp-protocol-stream</code> library paid 1 XAH from Alice to Bob through the cluster and the cluster settled it on Xahau mainnet with transactions that no person signed: a multisigned <code>PaymentChannelClaim</code> redeeming Alice's channel, a multisigned <code>Payment</code> of 0.996499 XAH to Bob (three signer keys, one per host, 2-of-3 quorum), and a multisigned close that handed Alice her unspent 2 XAH back. Total hosting cost for the cluster: 0.000012 EVR. §10 has the transcript.</p>
+  <p>Recommendation: treat this as an alternative ILP network for crypto-native peers, not as a node on the Interledger Foundation's Rafiki network; engineer every remaining design decision around the "non-controlling" test now in front of the U.S. Senate; and, before anyone puts more than pocket money in it, do the things in §11 — retire the tenant key, add liquidity providers with no governance rights, and give the contract an upgrade path that is not an admin key.</p>
 </section>
 
 <section class="prose" id="vision">
@@ -515,6 +515,27 @@ ledger log: PaymentChannelClaim:tesSUCCESS, Payment:tesSUCCESS, Payment:tesSUCCE
 consensus forks: none across 32 rounds on 3 nodes</code></pre>
   <div class="prose">
     <p>Bob's 0.001001 XAH left at the connector is not a rounding error: his own STREAM rate probes were in flight when the payout was planned, so those drops were held and returned after it. The mock ledger, the DEX price and the lease economics are stand-ins; the packet handling, claim verification, multisig idempotency and vote logic are the real code paths.</p>
+    <h3>Evernode mainnet: three hosts, three operators, real XAH</h3>
+    <p>The same contract, deployed with <code>evdevkit cluster-create 3 … --signer-count 3 --signer-quorum 0.6 -m 4</code> to <code>evernode4.kimchigraphics.com</code>, <code>zeb-a-nodew-01.xahaud.xyz</code> and <code>evernode12.laurenka.nl</code> (leases 0.000001 EVR per moment each, 4 moments: 0.000012 EVR for the cluster), the tenant account <code>r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC</code> funded with 10 XAH and 1 EVR, consensus rounds of 3 s with the ledger observed every third round. Alice and Bob are ordinary Xahau accounts (8 and 2 XAH) with ephemeral HotPocket identities. This is <code>deploy/testnet/demo-testnet.js</code> on the eighth deployment — the first seven found, in order, an unreachable host, a same-operator pair whose instances could not see each other, and finally a bundling defect that crashed every WebSocket frame to the ledger (§11).</p>
+  </div>
+<pre><code>04:37:57 Alice rLwxGWqbvXKo8n8VfgqHDZ1ijKBNUn63rD (8 XAH), Bob rpjRMytx1WoHraemK1zGXfxkokY1JaPcit (2 XAH), master 9.981223 XAH
+04:37:57 Alice opens a 5 XAH payment channel to the cluster account ...
+04:38:02 channel 34EE69A228C535B5FB07E39AB5453266F1C55C8A355D3EDBBB1ECE3FE38D06BE (tx A209442816A26236…)
+04:38:05 connector info: {"address":"g.nomad","master":"r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC","feeBps":25,"rounds":96}
+04:38:20 [alice] claim_ack: {"ch":"34EE69A2…","amt":"3000000","ok":true,"credited":"3000000","balance":"3000000"}
+04:39:14 STREAM connection established in 35857 ms
+04:39:38   packet fulfilled: +1.000000 XAH
+04:39:38 Alice paid Bob 1.000000 XAH in 23990 ms; Bob received 0.997500 XAH
+04:39:38 [bob] payout submitted: 0.996499 XAH 2BFB084E2ECA77F01F2E9E8C821D84C3303B6EB1D0AB4966076300784498836D
+04:39:53 [bob] payout validated: 0.996499 XAH 2BFB084E2ECA77F0…
+04:40:55   t+10s: channel redeemed 3 XAH, Bob on-ledger 2.996499 XAH (was 2)
+04:40:55 master account now 11.984604 XAH
+04:40:55 SETTLED on Xahau mainnet: channel claim redeemed and Bob paid by the cluster
+04:40:55 Alice asks to close her channel ...
+04:41:11   t+10s: channel closed
+04:41:11 channel closed by the cluster; Alice on-ledger 4.999976 XAH (was 2.999988)</code></pre>
+  <div class="prose">
+    <p>The explorer shows the payout as a Payment of 0.996499 XAH from the cluster account to Bob in ledger 25,528,756, fee 60 drops, signed by <code>rDBMkZ5kB6i1VGF9tqgfb4UPZNNSH2RfV</code>, <code>rn6nEpGCb8xgaWeM6EbDEBqxV6VnzPuDmL</code> and <code>rN5vZKscbVZ5hnYRcReMCPocqH9TmFpbKZ</code> — the three signer accounts evdevkit generated, one key file per host outside consensus state. Bob's 0.996499 rather than 0.9975 is the same probe artefact as in the simulator. Alice's remaining 2 XAH of credit stayed on the connector under her HotPocket identity (the demo now persists those identities and withdraws it at the end); the cluster's own diagnostics (<code>{"t":"diag"}</code>) show ledger-observing rounds completing in 0.6–1.1 s and every other round in a few milliseconds.</p>
   </div>
 </section>
 
@@ -522,7 +543,8 @@ consensus forks: none across 32 rounds on 3 nodes</code></pre>
   <h2><span class="n">§11</span>Open questions and next steps</h2>
   <h3>Before anyone relies on it</h3>
   <ul>
-    <li><strong>Run it on Evernode.</strong> The local cluster run settled the HotPocket half (consensus, user channel, timing). Next is a three-host cluster on Xahau testnet through <code>evdevkit cluster-create --signer-count 3</code>, the tenant key retired, one peer funding through a real channel — where everpocket's rough edges and the DEX assumptions get measured instead of assumed.</li>
+    <li><strong>What the mainnet run taught.</strong> Host selection matters more than host price: of 5,834 hosts with free slots, plenty answer on the ledger but not on their instance ports, and two instances of one operator could not reach each other's peer ports. The kit now probes candidates and spreads them across operators, and runs HotPocket at a 60 % consensus threshold so a three-node cluster survives one bad host (evdevkit's 0.8 quorum on three signers is 3-of-3; 0.6 gives 2-of-3). The costliest lesson was the bundler: <code>ncc</code> copied prebuilt native add-ons from several packages under colliding names, so <code>ws</code> loaded the wrong one as <code>bufferutil</code> and every ledger request over 48 bytes crashed the node process — invisible from outside, because HotPocket only reports that a round took its full 5-minute execution timeout. The contract now keeps per-node diagnostics outside consensus state and answers a <code>diag</code> read request with round timings, crash traces and a layer-by-layer connectivity probe run in a child process; that is what found it.</li>
+    <li><strong>Retire the tenant key.</strong> The account is still controlled by the tenant's master key as well as the cluster's SignerList; a <code>SetRegularKey</code> to a burned key plus <code>asfDisableMaster</code> makes the cluster the only signer. Deliberately left to a human.</li>
     <li><strong>Liquidity providers.</strong> Fees alone make the float grow slowly. An LP deposit with shares and withdrawal rights — and nothing else — keeps the control posture intact; anything resembling governance rights over the pool does not.</li>
     <li><strong>Outbound channels.</strong> Threshold ed25519 signing across the nodes would let the cluster sign channel claims to peers, making payouts instant and fee-free.</li>
     <li><strong>Upgrades.</strong> "No upgrade path" is the safest posture and the least practical one. Options are hash-pinned versions that peers opt into by reconnecting, or a migration message that moves balances to a successor contract the peers name — never an admin key.</li>

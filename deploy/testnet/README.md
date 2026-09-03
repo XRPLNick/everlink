@@ -2,7 +2,7 @@
 
 One PowerShell script, `deploy/testnet/run.ps1`, driven by the launchers in the repo root.
 `EV_NETWORK` picks the network (testnet, devnet, mainnet), `NOMAD_STAGE` the stage
-(`hosts`, `keys`, `deploy`, `demo`). Everything is logged under `deploy/testnet/out/`; when a
+(`hosts`, `keys`, `status`, `deploy`, `demo`, `withdraw`). Everything is logged under `deploy/testnet/out/`; when a
 stage fails, the `DONE` file names the reason (`no-tenant`, `no-xah`, `no-evr`, `no-hosts`,
 `no-cluster`, ...). Fix the cause and run again: finished stages are skipped.
 
@@ -48,15 +48,47 @@ faucet (`tenant.js`, `lib.js`) and the EVR is requested from the foundation's gi
    `PaymentChannelClaim` (channel redeemed) and `Payment` (Bob paid out), and finally has Alice
    close the channel.
 
-## Status (3 September 2026)
+## Status (3 September 2026): settled on Xahau mainnet
 
-* Testnet (`wss://hooks-testnet-v3.xrpl-labs.com`, network id 21338): stages 1-4 ran; the
-  tenant `rDin6EpnMJqJL2HkWyu7F3K47qUseGBTY2` holds 1000 faucet XAH and an EVR trust line, six
-  active hosts were found. Blocked at stage 5 with `no-evr`: the `giftBetaEvr` request is
-  answered by hand, not by a bot (dozens of unanswered requests on the foundation account).
-  Devnet is not live (its governor has no configuration).
-* Mainnet (`wss://xahau.network`, network id 21337): `run-mainnet-hosts.cmd` found 12,106
-  registered hosts, 5,842 active, 5,834 with free slots; lease prices from 0.000001 to 1
-  EVR/moment (median 0.0005). The twenty best-reputed hosts (reputation 252 on the 0-255 scale) all charge
-  0.000001 EVR/moment, so a 3-node cluster for 4 moments costs 0.000012 EVR. Next: keys,
-  funding, deploy, demo (see the table above).
+Eighth deployment, cluster `evernode4.kimchigraphics.com` / `zeb-a-nodew-01.xahaud.xyz` /
+`evernode12.laurenka.nl`, tenant `r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC` (10 XAH + 1 EVR):
+
+```
+04:38:02 channel 34EE69A2... (Alice -> cluster, 5 XAH)
+04:38:20 claim_ack ok, credited 3 XAH               (cluster observed the channel on-ledger)
+04:39:14 STREAM connection established in 35857 ms
+04:39:38 Alice paid Bob 1.000000 XAH in 23990 ms; Bob received 0.997500 XAH
+04:39:53 payout validated: 0.996499 XAH tx 2BFB084E2ECA77F01F2E9E8C821D84C3303B6EB1D0AB4966076300784498836D
+04:40:55 channel redeemed 3 XAH, Bob on-ledger 2.996499 XAH (was 2); master 11.984604 XAH
+04:41:11 channel closed by the cluster; Alice on-ledger 4.999976 XAH (was 2.999988)
+```
+
+The payout is a Payment in ledger 25,528,756 multi-signed by the three signer accounts evdevkit
+generated (one key file per host, outside consensus state). Alice's unspent 2 XAH of connector
+credit stayed under her (then ephemeral) HotPocket identity; the demo now saves the peers'
+identities in `peers.mainnet.json` and withdraws leftover credit at the end
+(`run-mainnet-withdraw.cmd` does it on its own for a saved peer).
+
+What the seven failed deployments before it found, all fixed in this kit:
+
+* Windows PowerShell 5.1 read em dashes in `run.ps1` as quotes (ASCII + BOM now) and its
+  `ConvertTo-Json` threw `OutOfMemoryException` on the config (patched by node now).
+* evdevkit `cluster-create` stops if a host's extend-lease acknowledgement times out; the
+  `--recover` flag changes the argv hash its cache is keyed on, so `recover-cluster.js` copies
+  the partial cluster file to the name the recovery run will look for.
+* Hosts that answer on the ledger but not on their instance ports, and same-operator instances
+  that cannot reach each other's peer ports: `hosts.js` probes a window of instance ports and
+  spreads the list across operators; the HotPocket override sets `threshold` 60 so 2-of-3
+  keeps closing ledgers (evdevkit's 0.8 quorum on three signers is 3-of-3; 0.6 is 2-of-3).
+* The one that cost the most time: `ncc` copies prebuilt native add-ons from several packages
+  under colliding names, `ws` loaded the wrong one as `bufferutil`, and every WebSocket frame
+  to Xahau longer than 48 bytes crashed the node process. From outside that looks like a round
+  that takes HotPocket's whole 5-minute `exec_timeout`. `index.js` now forces `ws` onto its
+  JavaScript implementations and the build externalizes those add-ons. It was found with the
+  contract's own diagnostics: `{"t":"diag","probe":true,"layers":true}` (read request) returns
+  per-node round timings, crash traces and a DNS/TCP/TLS/WebSocket/xrpl/evernode probe run in a
+  child process; `run-mainnet-status.cmd` prints it.
+* xrpl.js 4 derives an ed25519 key from a seed unless told `ecdsa-secp256k1`.
+
+Testnet (`wss://hooks-testnet-v3.xrpl-labs.com`) is blocked at `no-evr`: the foundation's
+`giftBetaEvr` requests are answered by hand. Devnet is not live.

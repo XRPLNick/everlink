@@ -97,6 +97,13 @@ $cfgPath = Join-Path $dist "nomad.config.json"
 node (Join-Path $here "patch-config.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "patch-config.log")
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $cfgPath) -or (Get-Item $cfgPath).Length -lt 100) { Fail "no-config" "could not write contract\dist\nomad.config.json (see out\patch-config.log)" }
 
+if ($stage -eq "withdraw") {
+  Step "pay a demo peer's unspent connector credit back to its account ($net)"
+  if (-not (Test-Path (Join-Path $dist "cluster.json"))) { Fail "no-cluster" "no contract\dist\cluster.json - deploy first" }
+  $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
+  node (Join-Path $here "withdraw.js") $(if ($env:NOMAD_PEER) { $env:NOMAD_PEER } else { "alice" }) 2>&1 | Tee-Object -FilePath (Join-Path $out "withdraw.log")
+  Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
+}
 if ($stage -eq "demo") {
   Step "6. settlement demo on $net (stage=demo)"
   if (-not (Test-Path (Join-Path $dist "cluster.json"))) { Fail "no-cluster" "no contract\dist\cluster.json - deploy first" }

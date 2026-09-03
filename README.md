@@ -11,18 +11,19 @@ account. It is the 2019 forum idea — *"connectors run as decentralised contrac
 one party runs the contract, all parties who use it pay for it as they use it, and it in turn
 pays for its own resource usage"* — built on the platform that now exists for it.
 
-**Status: prototype, verified on a real cluster.** The deterministic core, the peer plugin, the
-multi-node simulator and the end-to-end STREAM payment are tested (`npm test`, 18 tests), and
-the contract has been deployed with `hpdevkit` to a real 3-node HotPocket cluster (Docker
-Desktop on Windows, 1 s rounds), where the unmodified `ilp-protocol-stream` paid 1 XAH from a
-peer on node 1 to a peer on node 2 in 5.8 s with a clean close handshake
-(`deploy/local/`). The Xahau bridge (`everpocket-nodejs-contract`: NPL votes, multisig,
-Nomad leases) is written against the library's real API and exercised through a fake; it has
-not yet been run against Xahau testnet. See [deploy/README.md](deploy/README.md).
+**Status: ran on Evernode mainnet.** On 3 September 2026 the contract ran on three Evernode
+mainnet hosts (three operators, leases 0.000001 EVR/moment each) and settled a real payment on
+Xahau mainnet: Alice opened a 5 XAH channel to the cluster account, streamed a 3 XAH claim,
+paid Bob 1 XAH with the unmodified `ilp-protocol-stream` (24 s at 3-second rounds), and the
+cluster redeemed her channel and paid Bob 0.996499 XAH with transactions signed by its three
+signer keys under consensus (2-of-3), then closed the channel on her request and returned her
+unspent 2 XAH. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
+end-to-end are tested (`npm test`, 19 tests); the local `hpdevkit` run is in `deploy/local/`,
+the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 
 ```
 npm install --ignore-scripts      # blake3 (a hotpocket-js-client dep) tries to download a native build otherwise
-npm test                           # core, simulator, plugin + STREAM end-to-end, production bridge
+npm test                           # core, simulator, plugin + STREAM end-to-end, production bridge, round diagnostics
 npm run demo                       # narrated run: pay, settle, pay the hosts
 ```
 
@@ -109,5 +110,6 @@ Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `ack`, `err`
 * Single asset (XAH). Multi-asset routing needs per-asset ledgers and a rate source.
 * One channel per peer direction is assumed; channel key rotation is not handled.
 * everpocket's own bookkeeping (`transactions.json`) is written from unvoted ledger queries.
-* The local `hpdevkit` cluster run is done (ledger disabled, dev faucet); the Evernode/Xahau
-  testnet run with multisig settlement is not.
+* The tenant's master key still controls the cluster account alongside the SignerList; retiring
+  it (`SetRegularKey` + `asfDisableMaster`) is a deliberate manual step.
+* Peers' HotPocket identities are their account at the connector: lose the key, lose the credit.

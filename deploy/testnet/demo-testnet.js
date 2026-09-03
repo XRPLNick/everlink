@@ -49,10 +49,18 @@ async function main() {
   const { channelId, hash: chanTx } = await L.createChannel(client, aliceWallet, master, 5_000_000, 3600);
   say(`channel ${channelId} (tx ${chanTx})`);
 
-  // Peers.
+  // Peers. Their HotPocket identities are what the connector keeps balances under, so on
+  // mainnet they are persisted in peers.mainnet.json: a peer can come back later and withdraw.
   const factory = hotPocketClientFactory();
+  const peersFile = path.join(__dirname, `peers.${tenant.network}.json`);
+  const hex = (u) => Buffer.from(u).toString('hex');
   const mk = async (node, name) => {
-    const keys = await HotPocket.generateKeys();
+    let keys;
+    if (tenant.network === 'mainnet') {
+      const peers = JSON.parse(fs.readFileSync(peersFile, 'utf8'));
+      if (peers[name].hp && peers[name].hp.privateKey) keys = await HotPocket.generateKeys(peers[name].hp.privateKey);
+      else { keys = await HotPocket.generateKeys(); peers[name].hp = { privateKey: hex(keys.privateKey), publicKey: hex(keys.publicKey) }; fs.writeFileSync(peersFile, JSON.stringify(peers, null, 2)); }
+    } else keys = await HotPocket.generateKeys();
     const plugin = new HotPocketPlugin({ keys, servers: [`wss://${node.domain}:${node.userPort}`], createClient: factory, log: (...a) => say(`plugin[${name}]:`, ...a) });
     plugin.on('connector_error', (m) => say(`[${name}] connector says:`, JSON.stringify(m)));
     plugin.on('payout', (m) => say(`[${name}] payout ${m.status}: ${XAH(m.amt)} ${m.tx || ''} ${m.reason || ''}`));
@@ -126,7 +134,25 @@ async function main() {
     say(`  t+${(i + 1) * 10}s: channel ${closed ? 'closed' : 'still open'}`);
   }
   say(closed ? `channel closed by the cluster; Alice on-ledger ${await L.xahBalance(client, aliceX.address)} XAH (was ${aliceBefore})` : 'channel not closed by the cluster yet; it closes by itself after the settle delay (1 h)');
-  await bob.disconnect(); await client.disconnect();
+
+  // Square the books: whatever Alice claimed but did not spend is still her credit on the
+  // connector. She names her payout address and asks for it; the cluster pays it out.
+  const left = (await alice.getBalance()).balance;
+  if (BigInt(left) > 0n) {
+    say(`Alice withdraws her unspent connector credit (${XAH(left)}) ...`);
+    const before = await L.xahBalance(client, aliceX.address);
+    await alice.setPayoutAddress(aliceX.address);
+    await alice.withdraw();
+    let paid = false;
+    for (let i = 0; i < 18 && !paid; i++) {
+      await sleep(10000);
+      const now = await L.xahBalance(client, aliceX.address);
+      paid = now > before;
+      say(`  t+${(i + 1) * 10}s: Alice on-ledger ${now} XAH${paid ? ' (paid out)' : ''}`);
+    }
+    say(paid ? 'Alice got her unspent credit back on-ledger' : 'payout not observed yet (see the node diagnostics)');
+  }
+  await alice.disconnect(); await bob.disconnect(); await client.disconnect();
   process.exit(settled ? 0 : 2);
 }
 
