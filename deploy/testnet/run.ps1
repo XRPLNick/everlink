@@ -20,10 +20,12 @@ node -v
 if (-not (Test-Path $evdk)) { Fail "no-evdevkit" "node_modules\evdevkit\index.js missing (install from the Linux side with --ignore-scripts)" }
 if (-not (Test-Path (Join-Path $root "node_modules\xrpl"))) { Fail "no-xrpl" "node_modules\xrpl missing" }
 if (-not (Test-Path (Join-Path $dist "index.js"))) { Fail "no-dist" "contract\dist\index.js missing (npm run build:testnet --workspace contract)" }
-$env:EV_NETWORK = "testnet"
+if (-not $env:EV_NETWORK) { $env:EV_NETWORK = "testnet" }
+$net = $env:EV_NETWORK
+Write-Host "Evernode network: $net"
 
 Step "1. tenant account (faucet XAH + EVR gift)"
-$tenantFile = Join-Path $here "tenant.json"
+$tenantFile = Join-Path $here "tenant.$net.json"
 if (-not (Test-Path $tenantFile)) { node (Join-Path $here "tenant.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "tenant.log") }
 if (-not (Test-Path $tenantFile)) { Fail "no-tenant" "tenant account could not be created (see out\tenant.log)" }
 $tenant = Get-Content $tenantFile -Raw | ConvertFrom-Json
@@ -32,7 +34,7 @@ $env:EV_TENANT_SECRET = $tenant.secret
 $env:EV_XAHAUD_SERVER = $tenant.server
 
 Step "2. user keys"
-$keysFile = Join-Path $here "user.keys.json"
+$keysFile = Join-Path $here "user.$net.keys.json"
 if (-not (Test-Path $keysFile)) {
   $kg = cmd /c "node `"$evdk`" keygen --no-color 2>&1"
   $priv = ($kg | Select-String -Pattern "privateKey:\s*'?([0-9a-fA-F]+)'?" | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1)
@@ -45,7 +47,7 @@ $env:EV_USER_PRIVATE_KEY = $keys.privateKey
 Write-Host "user public key $($keys.publicKey)"
 
 Step "3. hosts with free instance slots"
-$hostsFile = Join-Path $here "hosts.txt"
+$hostsFile = Join-Path $here "hosts.$net.txt"
 node (Join-Path $here "hosts.js") 12 2>&1 | Tee-Object -FilePath (Join-Path $out "hosts.log")
 $addrs = @()
 if (Test-Path $hostsFile) { $addrs = @(Get-Content $hostsFile | Where-Object { $_ -match "^r[1-9A-HJ-NP-Za-km-z]{24,34}$" }) }
@@ -58,6 +60,7 @@ $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 $cfg.connector.masterAddress = $tenant.address
 $cfg.connector.evrIssuer = $tenant.evrIssuer
 $cfg.xahau.rippleServer = $tenant.server
+$cfg.xahau.network = $net
 $cfg.nomad.preferredHosts = @($addrs | Select-Object -First 12)
 $cfg | ConvertTo-Json -Depth 8 | Out-File -Encoding ascii $cfgPath
 Write-Host (Get-Content $cfgPath -Raw)

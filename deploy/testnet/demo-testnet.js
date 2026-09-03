@@ -16,7 +16,7 @@ const { createConnection, createServer } = require('ilp-protocol-stream');
 const { HotPocketPlugin, hotPocketClientFactory } = require(path.join(__dirname, '..', '..', 'plugin', 'src'));
 const L = require('./lib');
 
-const tenant = JSON.parse(fs.readFileSync(path.join(__dirname, 'tenant.json'), 'utf8'));
+const tenant = JSON.parse(fs.readFileSync(path.join(__dirname, `tenant.${(process.env.EV_NETWORK || 'testnet').toLowerCase()}.json`), 'utf8'));
 const clusterFile = process.argv[2] || path.join(__dirname, '..', '..', 'contract', 'dist', 'cluster.json');
 const cluster = JSON.parse(fs.readFileSync(clusterFile, 'utf8'));
 const nodes = cluster.nodes.filter((n) => n.domain && n.userPort);

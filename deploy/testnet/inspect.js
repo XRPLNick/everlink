@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const L = require('./lib');
-const tenant = JSON.parse(fs.readFileSync(path.join(__dirname, 'tenant.json')));
+const tenant = JSON.parse(fs.readFileSync(path.join(__dirname, `tenant.${(process.env.EV_NETWORK || 'testnet').toLowerCase()}.json`)));
 const hex2s = (h) => { try { return Buffer.from(h, 'hex').toString('utf8'); } catch (e) { return h; } };
 const fmtAmt = (a) => (typeof a === 'string' ? `${Number(a) / 1e6} XAH` : a ? `${a.value} ${a.currency}.${String(a.issuer).slice(0, 6)}` : '');
 (async () => {

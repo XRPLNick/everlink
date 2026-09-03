@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const evernode = require('evernode-js-client');
-const tenant = JSON.parse(fs.readFileSync(path.join(__dirname, 'tenant.json')));
+const tenant = JSON.parse(fs.readFileSync(path.join(__dirname, `tenant.${(process.env.EV_NETWORK || 'testnet').toLowerCase()}.json`)));
 (async () => {
   await evernode.Defaults.useNetwork(tenant.network || 'testnet');
   const api = new evernode.XrplApi(tenant.server, { autoReconnect: false });

@@ -10,7 +10,7 @@ const path = require('path');
 const evernode = require('evernode-js-client');
 
 const NETWORK = (process.env.EV_NETWORK || 'testnet').toLowerCase();
-const tenantFile = path.join(__dirname, 'tenant.json');
+const tenantFile = path.join(__dirname, `tenant.${(process.env.EV_NETWORK || 'testnet').toLowerCase()}.json`);
 const say = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 async function main() {
@@ -37,7 +37,7 @@ async function main() {
     .sort((a, b) => (b.reputation || 0) - (a.reputation || 0) || a.leaseEvr - b.leaseEvr || b.freeSlots - a.freeSlots);
   say(`${free.length} with free slots; top ${Math.min(limit, free.length)}:`);
   for (const h of free.slice(0, limit)) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || '--'}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}`);
-  fs.writeFileSync(path.join(__dirname, 'hosts.txt'), free.slice(0, limit).map((h) => h.address).join('\n') + '\n');
+  fs.writeFileSync(path.join(__dirname, `hosts.${NETWORK}.txt`), free.slice(0, limit).map((h) => h.address).join('\n') + '\n');
   fs.writeFileSync(path.join(__dirname, 'out', 'hosts.json'), JSON.stringify(free, null, 2));
   await reg.disconnect().catch(() => {});
   await api.disconnect().catch(() => {});

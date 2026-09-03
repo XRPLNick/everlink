@@ -14,7 +14,7 @@ const evernode = require('evernode-js-client');
 const kp = require('ripple-keypairs');
 
 const NETWORK = (process.env.EV_NETWORK || 'testnet').toLowerCase();
-const OUT = path.join(__dirname, 'tenant.json');
+const OUT = path.join(__dirname, `tenant.${NETWORK}.json`);
 const say = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
