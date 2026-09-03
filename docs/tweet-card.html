@@ -1,0 +1,96 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  :root {
+    --ground: #10181D; --surface: #17222A; --ink: #E8EEEC; --ink2: #B9C5C2; --muted: #86948F;
+    --rule: #2A3940; --teal: #5FC4BE; --teal-soft: #163A3A; --amber: #E3AA52; --amber-soft: #3A2E17;
+    --sans: "Carlito", "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
+    --serif: "Bitstream Charter", "Liberation Serif", Georgia, serif;
+    --mono: "DejaVu Sans Mono", "Liberation Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--ground); }
+  .card { width: 1600px; height: 900px; padding: 54px 64px 46px; color: var(--ink); font-family: var(--sans); display: grid; grid-template-columns: 640px 1fr; grid-template-rows: auto 1fr auto; column-gap: 56px; row-gap: 30px; position: relative; overflow: hidden; }
+  .card::before { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 8px; background: linear-gradient(90deg, var(--teal), var(--amber)); }
+
+  .head { grid-column: 1 / 3; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: 54px; line-height: 1.05; margin: 0; letter-spacing: -0.01em; max-width: 1000px; }
+  h1 em { font-style: normal; color: var(--amber); }
+  .stamp { font-family: var(--mono); font-size: 19px; color: var(--muted); text-align: right; line-height: 1.5; white-space: nowrap; }
+  .stamp b { color: var(--ink2); font-weight: 500; }
+
+  /* left: cluster */
+  .cluster { display: flex; flex-direction: column; gap: 14px; }
+  .label { font-family: var(--mono); font-size: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; white-space: nowrap; }
+  .node { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 16px; background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--teal); border-radius: 6px; padding: 14px 18px; }
+  .node .n { font-family: var(--mono); font-size: 20px; color: var(--teal); }
+  .node .host { font-size: 23px; line-height: 1.2; }
+  .node .host small { display: block; font-size: 17px; color: var(--muted); margin-top: 2px; }
+  .node .key { font-family: var(--mono); font-size: 16px; color: var(--ink2); background: var(--teal-soft); border-radius: 4px; padding: 6px 10px; white-space: nowrap; }
+  .brace { display: flex; align-items: center; gap: 14px; padding: 2px 0 2px 6px; color: var(--muted); font-size: 19px; }
+  .brace .line { flex: 1; height: 1px; background: var(--rule); }
+  .brace b { color: var(--amber); font-weight: 600; }
+  .acct { background: var(--amber-soft); border: 1px solid #5a4620; border-left: 4px solid var(--amber); border-radius: 6px; padding: 14px 18px; }
+  .acct .t { font-size: 23px; color: var(--amber); font-weight: 600; }
+  .acct .a { font-family: var(--mono); font-size: 18px; color: var(--ink2); margin-top: 4px; }
+  .acct .d { font-size: 18px; color: var(--ink2); margin-top: 5px; line-height: 1.35; }
+
+  /* right: timeline */
+  .timeline { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: 104px 1fr 180px; gap: 18px; align-items: baseline; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+  .row:last-child { border-bottom: none; }
+  .row .t { font-family: var(--mono); font-size: 19px; color: var(--muted); }
+  .row .e { font-size: 23px; line-height: 1.27; }
+  .row .e small { color: var(--muted); font-size: 18px; }
+  .row .v { font-family: var(--mono); font-size: 21px; text-align: right; color: var(--amber); white-space: nowrap; }
+  .row .v.t2 { color: var(--teal); }
+
+  /* footer */
+  .foot { grid-column: 1 / 3; display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .stats { display: flex; gap: 44px; flex: 0 0 auto; }
+  .stat .k { font-family: var(--mono); font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .stat .v { font-family: var(--serif); font-size: 30px; line-height: 1.15; margin-top: 2px; white-space: nowrap; }
+  .stat .v span { color: var(--amber); }
+  .tx { font-family: var(--mono); font-size: 15px; color: var(--muted); text-align: right; line-height: 1.6; white-space: nowrap; flex: 0 0 auto; }
+  .tx b { color: var(--ink2); font-weight: 500; }
+</style></head>
+<body>
+<div class="card">
+  <div class="head">
+    <h1>An Interledger connector that <em>nobody runs</em> just settled a payment on Xahau mainnet.</h1>
+    <div class="stamp"><b>3 September 2026</b><br>Evernode · HotPocket · Xahau</div>
+  </div>
+
+  <div class="cluster">
+    <div class="label">One contract · three hosts · three operators</div>
+    <div class="node"><div class="n">01</div><div class="host">evernode4.kimchigraphics.com<small>Netherlands · lease 0.000001 EVR per hour</small></div><div class="key">signer key</div></div>
+    <div class="node"><div class="n">02</div><div class="host">zeb-a-nodew-01.xahaud.xyz<small>France · lease 0.000001 EVR per hour</small></div><div class="key">signer key</div></div>
+    <div class="node"><div class="n">03</div><div class="host">evernode12.laurenka.nl<small>Netherlands · lease 0.000001 EVR per hour</small></div><div class="key">signer key</div></div>
+    <div class="brace"><span>consensus every 3 s &nbsp;·&nbsp; transactions need <b>2 of 3</b> signatures</span><span class="line"></span></div>
+    <div class="acct">
+      <div class="t">The cluster's own Xahau account</div>
+      <div class="a">r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC</div>
+      <div class="d">Takes peers' payment-channel claims, pays peers out, pays its hosts in EVR. No admin key in the protocol.</div>
+    </div>
+  </div>
+
+  <div class="timeline">
+    <div class="label">What happened (times UTC)</div>
+    <div class="row"><div class="t">04:38:02</div><div class="e">Alice opens a payment channel to the cluster account</div><div class="v">5 XAH</div></div>
+    <div class="row"><div class="t">04:38:20</div><div class="e">Cluster sees the channel on-ledger, accepts her signed claim</div><div class="v">3 XAH</div></div>
+    <div class="row"><div class="t">04:39:38</div><div class="e">Alice pays Bob over ILP/STREAM through the cluster <small>· 24 s · fee 0.0025</small></div><div class="v t2">1.000000 XAH</div></div>
+    <div class="row"><div class="t">04:39:53</div><div class="e">Cluster pays Bob out — a Payment co-signed by the three hosts</div><div class="v">0.996499 XAH</div></div>
+    <div class="row"><div class="t">04:40:55</div><div class="e">Cluster redeems Alice's channel with a co-signed PaymentChannelClaim</div><div class="v">3 XAH</div></div>
+    <div class="row"><div class="t">04:41:11</div><div class="e">Alice asks to close; the cluster closes it and returns her unspent balance</div><div class="v">2 XAH back</div></div>
+  </div>
+
+  <div class="foot">
+    <div class="stats">
+      <div class="stat"><div class="k">Hosting, 4 hours</div><div class="v"><span>0.000012</span> EVR</div></div>
+      <div class="stat"><div class="k">Humans signing</div><div class="v"><span>0</span></div></div>
+      <div class="stat"><div class="k">Idea first posted</div><div class="v">Interledger forum, 2019</div></div>
+    </div>
+    <div class="tx">payout tx <b>2BFB084E…4498836D</b> · ledger <b>25,528,756</b> · 3 signatures<br>channel <b>34EE69A2…</b> · fee per multisigned tx 0.00006 XAH</div>
+  </div>
+</div>
+</body></html>
