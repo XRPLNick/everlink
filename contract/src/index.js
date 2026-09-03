@@ -80,4 +80,10 @@ async function main() {
   diagMark(diagFile, `hpc.init -> ${ok}`);
 }
 
-main().catch((e) => { console.error('nomad-connector fatal:', e); process.exit(1); });
+if (process.env.NOMAD_PROBE === 'layers') {
+  // Child process of a {"t":"diag","layers":true} read request: probe and print, never touch HotPocket.
+  require('./round').probeLayersInline(process.env.NOMAD_PROBE_SERVER || 'wss://xahau.network', process.env.NOMAD_PROBE_MASTER || '')
+    .then(() => process.exit(0), (e) => { console.log(`probe failed: ${e && e.message}`); process.exit(1); });
+} else {
+  main().catch((e) => { console.error('nomad-connector fatal:', e); process.exit(1); });
+}

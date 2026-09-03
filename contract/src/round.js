@@ -105,25 +105,45 @@ async function probeConnectivity(stateDir, targets = []) {
   return out;
 }
 
-// Layer-by-layer connectivity to the ledger from inside this process (read requests only):
-// DNS, TCP, TLS, raw WebSocket, xrpl.js client, evernode XrplApi. Each step has a short
-// timeout so the whole probe answers well inside HotPocket's read-request window.
-async function probeLayers(server, master) {
+// Layer-by-layer connectivity to the ledger (read requests only): DNS, TCP, TLS, raw
+// WebSocket, xrpl.js client, evernode XrplApi. Runs in a child process (this same bundle,
+// started with NOMAD_PROBE=layers) so that a step which blocks the event loop cannot take the
+// read request down with it: each step prints its line as soon as it finishes and the child
+// is killed after a wall-clock limit, whatever it is stuck in.
+async function probeLayersInline(server, master) {
   const url = new URL(server);
   const host = url.hostname; const port = Number(url.port || 443);
-  const out = {}; const t = () => Date.now();
+  const t = () => Date.now();
   const step = async (name, fn, ms = 5000) => {
     const t0 = t();
-    try { const r = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]); out[name] = `${r} ${t() - t0}ms`; }
-    catch (e) { out[name] = `ERR ${e && (e.code || e.message || e)} ${t() - t0}ms`; }
+    let line;
+    try { const r = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]); line = `${name}: ${r} ${t() - t0}ms`; }
+    catch (e) { line = `${name}: ERR ${e && (e.code || e.message || e)} ${t() - t0}ms`; }
+    process.stdout.write(line + '\n');
   };
+  process.stdout.write(`node ${process.version} pid ${process.pid} uid ${typeof process.getuid === 'function' ? process.getuid() : '?'} cwd ${process.cwd()}\n`);
   await step('dns', async () => (await dns.promises.lookup(host)).address);
   await step('tcp', () => new Promise((res, rej) => { const s = net.connect({ host, port }); s.once('connect', () => { s.destroy(); res('open'); }); s.once('error', rej); }));
+  await step('random', async () => { const c = require('crypto'); const t0 = t(); c.randomBytes(32); return `ok ${t() - t0}ms`; });
   await step('tls', () => new Promise((res, rej) => { const tls = require('tls'); const s = tls.connect({ host, port, servername: host }, () => { const ok = s.authorized; const err = s.authorizationError; s.destroy(); res(ok ? 'authorized' : `unauthorized ${err}`); }); s.once('error', rej); }));
   await step('ws', () => new Promise((res, rej) => { const WebSocket = require('ws'); const w = new WebSocket(server); w.once('open', () => { w.close(); res('open'); }); w.once('error', rej); }), 8000);
   await step('xrpl.Client', async () => { const xrpl = require('xrpl'); const c = new xrpl.Client(server, { connectionTimeout: 6000 }); await c.connect(); const r = await c.request({ command: 'server_state' }); await c.disconnect(); return `server_state ${r.result.state.server_state} ledger ${r.result.state.validated_ledger && r.result.state.validated_ledger.seq}`; }, 9000);
   await step('evernode.XrplApi', async () => { const evernode = require('evernode-js-client'); const api = new evernode.XrplApi(server, { autoReconnect: false }); await api.connect(); const acc = new evernode.XrplAccount(master, null, { xrplApi: api }); const info = await acc.getInfo(); await api.disconnect(); return `balance ${info.Balance} ledger ${api.ledgerIndex}`; }, 9000);
-  return out;
+}
+
+function probeLayers(server, master, entry = process.argv[1], limitMs = 45000) {
+  return new Promise((resolve) => {
+    const { spawn } = require('child_process');
+    const out = []; let child;
+    try {
+      child = spawn(process.execPath, [entry], { env: { ...process.env, NOMAD_PROBE: 'layers', NOMAD_PROBE_SERVER: server, NOMAD_PROBE_MASTER: master }, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) { resolve({ error: `spawn: ${e.message}` }); return; }
+    const timer = setTimeout(() => { out.push('KILLED after wall-clock limit'); try { child.kill('SIGKILL'); } catch (e) { /* ignore */ } }, limitMs);
+    child.stdout.on('data', (d) => out.push(...d.toString().split('\n').filter(Boolean)));
+    child.stderr.on('data', (d) => out.push(...d.toString().split('\n').filter(Boolean).map((l) => `stderr: ${l}`)));
+    child.on('error', (e) => { out.push(`child error: ${e.message}`); });
+    child.on('exit', (code, signal) => { clearTimeout(timer); out.push(`child exit ${code} ${signal || ''}`); resolve(out); });
+  });
 }
 
 async function runRound(ctx, { stateDir, config, bridge = null, logger = null, diagFile = null, timeouts = {} }) {
@@ -231,4 +251,4 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
   return { state, outputs: rc.outputs, intents: rc.intents };
 }
 
-module.exports = { runRound, collectInputs, probeConnectivity, probeLayers, diagMark };
+module.exports = { runRound, collectInputs, probeConnectivity, probeLayers, probeLayersInline, diagMark };

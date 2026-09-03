@@ -44,7 +44,7 @@ async function probe(node) {
     } else say(`  diag: ${JSON.stringify(diag)}`);
     if (diag && diag.probe) say(`  probe from node: ${Object.entries(diag.probe).map(([k, v]) => `${k} -> ${v}`).join('; ')}`);
     if (diag && diag.ledger) say(`  ledger probe from node: ${JSON.stringify(diag.ledger)}`);
-    if (diag && diag.layers) say(`  layers from node: ${Object.entries(diag.layers).map(([k, v]) => `${k}: ${v}`).join('; ')}`);
+    if (diag && diag.layers) say(`  layers from node: ${Array.isArray(diag.layers) ? diag.layers.join(' | ') : JSON.stringify(diag.layers)}`);
     if (diag && diag.process) say(`  process: ${JSON.stringify(diag.process)}; dirs ${JSON.stringify(diag.dirs)}`);
     if (diag && diag.patch) say(`  patch.cfg: ${JSON.stringify(diag.patch)}; process ${JSON.stringify(diag.process)}`);
     if (diag && diag.events && diag.events.length) { say(`  last events on the node:`); for (const e of diag.events.slice(-24)) say(`    ${e}`); }
