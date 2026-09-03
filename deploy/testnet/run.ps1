@@ -65,7 +65,10 @@ Write-Host (Get-Content $cfgPath -Raw)
 Step "5. cluster-create (3 nodes, 3 signers, 80% quorum)"
 node (Join-Path $here "balance.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "balance.log")
 $bal = Get-Content (Join-Path $out "balance.json") -Raw | ConvertFrom-Json
-if ([double]$bal.evr -le 0) { Fail "no-evr" "tenant $($tenant.address) has no EVR; leases cannot be bought (see out\balance.log)" }
+if ([double]$bal.evr -le 0) {
+  node (Join-Path $here "inspect.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "inspect.log")
+  Fail "no-evr" "tenant $($tenant.address) has no EVR; leases cannot be bought (see out\balance.log, out\inspect.log)"
+}
 $clusterFile = Join-Path $dist "cluster.json"
 if (-not (Test-Path $clusterFile)) {
   $env:EV_HP_OVERRIDE_CFG_PATH = Join-Path $here "hp.cfg.testnet.override"
