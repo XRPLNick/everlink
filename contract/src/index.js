@@ -34,6 +34,10 @@ async function main() {
   const config = makeConfig({ ...(file.connector || {}), ...(xahauEnabled ? {} : { masterAddress: null }) });
   if (xahauEnabled && !config.masterAddress) throw new Error('connector.masterAddress (the cluster multisig account) is required when xahau is enabled');
 
+  // Per-node diagnostics live next to the signer key, outside the consensus state directory.
+  const diagFile = path.join(process.cwd(), '..', 'nomad-diag.json');
+  const logger = (...a) => { console.log(new Date().toISOString(), ...a); diagMark(diagFile, a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')); };
+
   let bridge = null;
   if (xahauEnabled) {
     const { XahauBridge } = require('./adapters/xahau-bridge');
@@ -45,25 +49,29 @@ async function main() {
       factsEvery: file.xahau.factsEvery || 5,
       nomadEvery: file.xahau.nomadEvery || 10,
       nomad: file.nomad || null,
-      logger: (...a) => console.log(new Date().toISOString(), ...a),
+      logger,
     });
   }
 
-  // Per-node diagnostics live next to the signer key, outside the consensus state directory.
-  const diagFile = path.join(process.cwd(), '..', 'nomad-diag.json');
-  diagMark(diagFile, `process up (${process.version}), bridge ${bridge ? 'on' : 'off'}, cwd ${process.cwd()}`);
+  const rss = () => `${Math.round(process.memoryUsage().rss / 1048576)} MB`;
+  diagMark(diagFile, `process up (${process.version}, rss ${rss()}), bridge ${bridge ? 'on' : 'off'}, cwd ${process.cwd()}`);
+  // Anything that ends this process abnormally must leave a trace.
+  // (Node's default is to die on both; keep that, but write the trace first.)
+  process.on('uncaughtException', (e) => { diagMark(diagFile, `UNCAUGHT ${e && e.stack ? e.stack.split('\n').slice(0, 4).join(' | ') : e}`); process.exit(4); });
+  process.on('unhandledRejection', (e) => { diagMark(diagFile, `UNHANDLED REJECTION ${e && e.stack ? e.stack.split('\n').slice(0, 4).join(' | ') : e}`); process.exit(5); });
+  for (const sig of ['SIGTERM', 'SIGHUP']) process.on(sig, () => { diagMark(diagFile, `signal ${sig}`); process.exit(3); });
+  process.on('exit', (code) => diagMark(diagFile, `process exit ${code} (rss ${rss()})`));
   const contract = async (ctx) => {
-    diagMark(diagFile, `contract called: ${ctx.readonly ? 'readonly' : `consensus lcl ${ctx.lclSeqNo}`}, ${ctx.users.list().length} users`);
+    diagMark(diagFile, `contract called: ${ctx.readonly ? 'readonly' : `consensus lcl ${ctx.lclSeqNo}`}, ${ctx.users.list().length} users, rss ${rss()}`);
     // Watchdog: a round that is still running after this long (a stalled ledger connection,
     // a vote nobody answers) must not block the node forever; give up on it.
     const watchdog = setTimeout(() => { console.error('nomad-connector: round watchdog fired, exiting'); process.exit(2); }, ROUND_WATCHDOG_MS);
     watchdog.unref();
     try {
       await runRound(ctx, {
-        stateDir: process.cwd(), config, bridge, diagFile,
-        logger: (...a) => console.log(new Date().toISOString(), ...a),
+        stateDir: process.cwd(), config, bridge, diagFile, logger,
       });
-    } finally { clearTimeout(watchdog); diagMark(diagFile, `contract returned (${ctx.readonly ? 'readonly' : 'consensus'})`); }
+    } finally { clearTimeout(watchdog); diagMark(diagFile, `contract returned (${ctx.readonly ? 'readonly' : 'consensus'}), rss ${rss()}`); }
   };
 
   const hpc = new HotPocket.Contract();

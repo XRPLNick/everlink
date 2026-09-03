@@ -102,11 +102,28 @@ class XahauBridge {
     return true;
   }
 
+  // Read-request helper ({"t":"diag","ledger":true}): can this node reach the ledger through
+  // everpocket's XrplContext, and how long does it take? Never used in consensus rounds.
+  async probeLedger(ctx) {
+    const t0 = Date.now(); const out = {};
+    try {
+      const xrpl = await this._xrpl(ctx); out.initMs = Date.now() - t0;
+      const info = await xrpl.xrplAcc.getInfo(); out.balance = info && info.Balance; out.infoMs = Date.now() - t0;
+      out.ledgerIndex = xrpl.xrplApi.ledgerIndex; out.signers = xrpl.signerListInfo ? xrpl.signerListInfo.signerList.length : 0; out.quorum = xrpl.signerListInfo && xrpl.signerListInfo.signerQuorum;
+      out.isSigner = typeof xrpl.isSigner === 'function' ? xrpl.isSigner() : null;
+    } catch (e) { out.error = String(e && e.message ? e.message : e); out.failedAfterMs = Date.now() - t0; }
+    try { const r = this._contexts(ctx); if (r.xrplReady) await r.xrplContext.deinit(); } catch (e) { /* ignore */ }
+    return out;
+  }
+
   async observe(ctx, state) {
     if (ctx.lclSeqNo % this.factsEvery !== 0 && !this._hasLedgerWork(state)) return null;
     const r = this._contexts(ctx);
+    const mark = (t) => this.log(`observe lcl ${ctx.lclSeqNo}: ${t}`);
+    mark('xrpl init');
     const xrpl = await this._xrpl(ctx);
     const acc = xrpl.xrplAcc;
+    mark('xrpl ready');
 
     // --- local observation (differs per node in timing, hence the vote below) ---
     const info = await acc.getInfo();
@@ -138,8 +155,10 @@ class XahauBridge {
     };
 
     // --- agree ---
+    mark(`queried: ledger ${local.ledgerIndex}, balance ${local.masterBalance}, ${channels.length} channels; voting`);
     const unlCount = r.hpContext.getContractUnl().length;
     const votes = await r.voteContext.vote(`nomad-facts-${ctx.lclSeqNo}`, [local], new this.evp.AllVoteElector(unlCount, TIMEOUT_MS));
+    mark(`votes: ${votes.length}/${unlCount}`);
     const agreed = majority(votes.map((v) => ({ sender: v.sender.publicKey, data: v.data })));
     if (!agreed) throw new Error('no facts agreed this round');
     return agreed;
