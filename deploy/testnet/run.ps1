@@ -115,7 +115,7 @@ Write-Host "EVR limit for leases: $evrLimit"
 $clusterFile = Join-Path $dist "cluster.json"
 if (-not (Test-Path $clusterFile)) {
   $env:EV_HP_OVERRIDE_CFG_PATH = Join-Path $here "hp.cfg.testnet.override"
-  $partial = @(Get-ChildItem (Join-Path $env:TEMP "evdevkit-cluster\partial-cluster-*.json") -ErrorAction SilentlyContinue)
+  $partial = @(Get-ChildItem (Join-Path $env:TEMP "evdevkit-cluster\partial-cluster-*.json") -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddHours(-2) })
   if ($partial.Count -gt 0) {
     Write-Host "resuming the cluster-create that stopped earlier (nodes already acquired)"
     cmd /c "node `"$(Join-Path $here 'recover-cluster.js')`" $size `"$dist`" `"$hostsFile`" $quorum $evrLimit > `"$out\cluster-create.log`" 2>&1"
