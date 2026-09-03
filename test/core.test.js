@@ -160,12 +160,26 @@ test('redemption intents: on threshold, and immediately when the owner starts cl
   assert.equal(rc.intents[0].tx.TransactionType, 'PaymentChannelClaim');
   assert.equal(rc.intents[0].tx.Balance, '1200000');
   assert.equal(rc.intents[0].tx.PublicKey, keys.publicKey);
+  assert.equal(rc.intents[0].tx.Flags, undefined, 'threshold redemption leaves the channel open');
   rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'H1', resultCode: 'tesSUCCESS' }]);
   assert.equal(s.channels[ch].redeemPending.hash, 'H1');
   // Ledger catches up -> pending cleared; a further small claim + owner closing -> redeem now.
   rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 4, connected: new Set(), inputs: [{ peer: H.PEER_A, raw: H.claimInput(ch, 1_250_000, keys.privateKey) }], facts: facts({ balance: 1_200_000, expiration: T0 + 3600_000 }) });
   assert.equal(s.channels[ch].redeemPending.intentId, rc.intents[0].id);
   assert.equal(rc.intents[0].tx.Balance, '1250000');
+  assert.equal(rc.intents[0].tx.Flags, 0x00020000, 'closing channel is redeemed with tfClose (destination closes at once)');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'H2', resultCode: 'tesSUCCESS' }]);
+  // Fully redeemed but still open and still closing (e.g. the tfClose claim failed): close it bare.
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 5, connected: new Set(), inputs: [], facts: { ...facts({ balance: 1_250_000, expiration: T0 + 3600_000 }), failedTxs: [{ hash: 'H2', resultCode: 'tecUNFUNDED_PAYMENT' }] } });
+  assert.equal(rc.intents.length, 1);
+  assert.equal(rc.intents[0].kind, 'close');
+  assert.equal(rc.intents[0].tx.Flags, 0x00020000);
+  assert.equal(rc.intents[0].tx.Balance, undefined);
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'H3', resultCode: 'tesSUCCESS' }]);
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 6, connected: new Set(), inputs: [], facts: facts({ balance: 1_250_000, expiration: T0 + 3600_000 }) });
+  assert.equal(rc.intents.length, 0, 'close already pending: not repeated');
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 7, connected: new Set(), inputs: [], facts: { ...facts(), channels: [] } });
+  assert.equal(s.channels[ch], undefined, 'channel gone from the ledger, gone from state');
 });
 
 test('payouts: threshold or withdraw, only from on-ledger funds, refund on failure', () => {

@@ -65,6 +65,8 @@ function fakeEverpocket(mock, calls) {
       // Real everpocket votes on the sequence, gathers signatures, submits once. Emulated by
       // the idempotent mock keyed on the tx body plus a per-round vote on the result.
       const key = JSON.stringify(tx);
+      this.submitted.push(tx);
+      if (tx.SigningPubKey !== '' || tx.NetworkID !== 21338) throw new Error('Xahau multisig envelope missing (SigningPubKey "", NetworkID)');
       const r = mock.submitMultisigned(tx, key);
       const votes = await this.voteContext.vote(`txSubmit${this.voteContext.getUniqueNumber()}`, [r], new AllVoteElector(this.hpContext.getContractUnl().length, 50));
       return votes[0].data;

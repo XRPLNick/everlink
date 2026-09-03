@@ -29,6 +29,7 @@ const STATE_VERSION = 1;
 const OFFER_BACKOFF_ROUNDS = 20;  // rounds to wait after a failed EVR top-up before retrying
 const REDEEM_RETRY_ROUNDS = 200;  // a redemption never confirmed is retried after this many rounds
 const PRUNE_EVERY_ROUNDS = 100;
+const TF_CLOSE = 0x00020000;      // PaymentChannelClaim flag: close the channel (immediate for the destination)
 
 const DEFAULT_CONFIG = Object.freeze({
   // ILP
@@ -198,6 +199,7 @@ class RoundContext {
     }
     for (const ch of Object.values(state.channels)) {
       if (ch.redeemPending && ch.redeemPending.hash === hash && !ok) ch.redeemPending = null;
+      if (ch.closePending && ch.closePending.hash === hash && !ok) ch.closePending = null;
     }
     const t = state.treasury;
     if (t.offerPending && t.offerPending.hash === hash) {
@@ -443,19 +445,30 @@ class RoundContext {
       }
       if (ch.redeemPending) continue;
       const unredeemed = toBig(ch.lastClaimAmount) - toBig(ch.ledgerBalance);
-      if (unredeemed <= 0n) continue;
       const closing = !!ch.expiration;
+      if (unredeemed <= 0n) {
+        // Nothing left to redeem but the owner wants out: close it for them right away (the
+        // destination's tfClose is immediate) instead of making them wait out the settle delay.
+        if (ch.closePending && this.lcl - (ch.closePending.lcl || this.lcl) > REDEEM_RETRY_ROUNDS) ch.closePending = null;
+        if (closing && !ch.closePending) {
+          const intentId = nextId(state, 'c');
+          ch.closePending = { intentId, hash: null, lcl: this.lcl };
+          this.intents.push({ id: intentId, kind: 'close', channel: id, tx: { TransactionType: 'PaymentChannelClaim', Account: master, Channel: id, Flags: TF_CLOSE, Fee: fee } });
+        }
+        continue;
+      }
       if (!closing && unredeemed < toBig(config.redeemThresholdDrops)) continue;
       const intentId = nextId(state, 'r');
       ch.redeemPending = { intentId, amount: ch.lastClaimAmount, hash: null, lcl: this.lcl };
-      this.intents.push({
-        id: intentId, kind: 'redeem', channel: id,
-        tx: {
-          TransactionType: 'PaymentChannelClaim', Account: master, Channel: id,
-          Balance: ch.lastClaimAmount, Amount: ch.lastClaimAmount,
-          Signature: ch.lastClaimSig, PublicKey: ch.publicKey, Fee: fee,
-        },
-      });
+      const tx = {
+        TransactionType: 'PaymentChannelClaim', Account: master, Channel: id,
+        Balance: ch.lastClaimAmount, Amount: ch.lastClaimAmount,
+        Signature: ch.lastClaimSig, PublicKey: ch.publicKey, Fee: fee,
+      };
+      // The owner asked to close: as the destination we can close it at once (tfClose), which
+      // returns the unclaimed remainder to the owner without waiting out the settle delay.
+      if (closing) tx.Flags = TF_CLOSE;
+      this.intents.push({ id: intentId, kind: 'redeem', channel: id, tx });
     }
 
     // 2. Pay peers out, but only from funds that are really on the ledger.
@@ -524,6 +537,9 @@ class RoundContext {
       for (const ch of Object.values(state.channels)) {
         if (ch.redeemPending && ch.redeemPending.intentId === r.id) {
           if (r.ok) ch.redeemPending.hash = r.hash; else ch.redeemPending = null;
+        }
+        if (ch.closePending && ch.closePending.intentId === r.id) {
+          if (r.ok) ch.closePending.hash = r.hash; else ch.closePending = null;
         }
       }
       const t = state.treasury;

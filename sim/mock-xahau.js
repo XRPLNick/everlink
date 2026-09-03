@@ -99,18 +99,25 @@ class MockXahau {
         const ch = this.channels.get(tx.Channel);
         if (!ch) throw new Error('tecNO_ENTRY');
         if (tx.Account !== ch.destination && tx.Account !== ch.account) throw new Error('tecNO_PERMISSION');
-        const balance = BigInt(tx.Balance);
-        const amount = BigInt(tx.Amount || tx.Balance);
-        if (tx.Account !== ch.account) {
-          if (!verifyClaim({ channel: tx.Channel, amount: amount.toString(), signature: tx.Signature, publicKey: tx.PublicKey })) throw new Error('temBAD_SIGNATURE');
-          if (tx.PublicKey !== ch.publicKey) throw new Error('temBAD_SIGNER');
+        if (tx.Balance !== undefined) {
+          const balance = BigInt(tx.Balance);
+          const amount = BigInt(tx.Amount || tx.Balance);
+          if (tx.Account !== ch.account) {
+            if (!verifyClaim({ channel: tx.Channel, amount: amount.toString(), signature: tx.Signature, publicKey: tx.PublicKey })) throw new Error('temBAD_SIGNATURE');
+            if (tx.PublicKey !== ch.publicKey) throw new Error('temBAD_SIGNER');
+          }
+          if (balance > amount || balance > ch.amount) throw new Error('tecUNFUNDED_PAYMENT');
+          if (balance <= ch.balance) throw new Error('tecUNFUNDED_PAYMENT');
+          const delta = balance - ch.balance;
+          ch.balance = balance;
+          this.acct(ch.destination).balance += delta;
         }
-        if (balance > amount || balance > ch.amount) throw new Error('tecUNFUNDED_PAYMENT');
-        if (balance <= ch.balance) throw new Error('tecUNFUNDED_PAYMENT');
-        const delta = balance - ch.balance;
-        ch.balance = balance;
-        this.acct(ch.destination).balance += delta;
         from.balance -= fee;
+        // tfClose from the destination closes at once: the unclaimed remainder goes back to the owner.
+        if ((Number(tx.Flags || 0) & 0x00020000) && tx.Account === ch.destination) {
+          this.acct(ch.account).balance += ch.amount - ch.balance;
+          this.channels.delete(ch.id);
+        }
         return;
       }
       case 'OfferCreate': {

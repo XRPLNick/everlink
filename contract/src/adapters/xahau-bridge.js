@@ -18,6 +18,7 @@
 const { majority } = require('./npl-vote');
 
 const TIMEOUT_MS = 6000;
+const NETWORK_IDS = { mainnet: 21337, testnet: 21338 };
 // everpocket ClusterMessageType values (models/cluster): messages from cluster nodes, not peers.
 const CLUSTER_MESSAGE_TYPES = new Set(['maturity_ack', 'cluster_nodes']);
 
@@ -125,6 +126,16 @@ class XahauBridge {
     return agreed;
   }
 
+  // Xahau transactions carry the network id; multisigned ones have an empty SigningPubKey.
+  // everpocket's own prepare* helpers add both, the core's intents do not.
+  _txEnvelope(tx) {
+    let networkID = NETWORK_IDS[this.network];
+    try { networkID = require('evernode-js-client').Defaults.values.networkID || networkID; } catch (e) { /* tests inject a fake everpocket */ }
+    const out = { ...tx, SigningPubKey: '' };
+    if (networkID && out.NetworkID === undefined) out.NetworkID = networkID;
+    return out;
+  }
+
   async submit(ctx, intents) {
     const xrpl = await this._xrpl(ctx);
     const results = [];
@@ -132,7 +143,7 @@ class XahauBridge {
       try {
         // everpocket: decides Sequence/LastLedgerSequence by vote, collects signer
         // signatures over NPL, one node submits, the result is voted back to everyone.
-        const res = await xrpl.multiSignAndSubmitTransaction(intent.tx);
+        const res = await xrpl.multiSignAndSubmitTransaction(this._txEnvelope(intent.tx));
         const ok = res && (res.resultCode === 'tesSUCCESS' || res.resultCode === 'tefALREADY' || res.resultCode === 'tefPAST_SEQ');
         results.push({ id: intent.id, ok: !!ok, hash: res && res.hash, resultCode: res && res.resultCode });
       } catch (e) {
@@ -162,7 +173,10 @@ class XahauBridge {
 function knownHashes(state) {
   const s = new Set();
   for (const p of Object.values(state.payouts)) if (p.txHash) s.add(p.txHash);
-  for (const c of Object.values(state.channels)) if (c.redeemPending && c.redeemPending.hash) s.add(c.redeemPending.hash);
+  for (const c of Object.values(state.channels)) {
+    if (c.redeemPending && c.redeemPending.hash) s.add(c.redeemPending.hash);
+    if (c.closePending && c.closePending.hash) s.add(c.closePending.hash);
+  }
   if (state.treasury.offerPending && state.treasury.offerPending.hash) s.add(state.treasury.offerPending.hash);
   return s;
 }
