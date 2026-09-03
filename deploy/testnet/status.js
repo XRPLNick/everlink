@@ -32,7 +32,7 @@ async function probe(node) {
     };
     let info = null; let diag = null;
     try { info = await read({ t: 'info' }, 8000); } catch (e) { info = { error: e.message }; }
-    try { diag = await read({ t: 'diag', probe: true, ledger: true }, 40000); } catch (e) { diag = { error: e.message }; }
+    try { diag = await read({ t: 'diag', probe: true, layers: true }, 60000); } catch (e) { diag = { error: e.message }; }
     const adv = s2.ledgerSeqNo > s1.ledgerSeqNo;
     say(`${node.domain}:${node.userPort} ${node.host}  connected in ${Date.now() - t0} ms; hp ${s2.hpVersion}; ledger ${s1.ledgerSeqNo} -> ${s2.ledgerSeqNo} after 7 s (${adv ? 'ADVANCING' : 'STUCK'}); vote ${s2.voteStatus}; unl ${s2.currentUnl.length} [${s2.currentUnl.map((u) => String(u).slice(0, 10)).join(' ')}]; peers ${(s2.peers || []).length}`);
     say(`  contract: ${info && info.connectorAddress ? `${info.connectorAddress} master ${info.masterAddress} rounds ${info.rounds} stats ${JSON.stringify(info.stats)}` : JSON.stringify(info)}`);
@@ -44,6 +44,8 @@ async function probe(node) {
     } else say(`  diag: ${JSON.stringify(diag)}`);
     if (diag && diag.probe) say(`  probe from node: ${Object.entries(diag.probe).map(([k, v]) => `${k} -> ${v}`).join('; ')}`);
     if (diag && diag.ledger) say(`  ledger probe from node: ${JSON.stringify(diag.ledger)}`);
+    if (diag && diag.layers) say(`  layers from node: ${Object.entries(diag.layers).map(([k, v]) => `${k}: ${v}`).join('; ')}`);
+    if (diag && diag.process) say(`  process: ${JSON.stringify(diag.process)}; dirs ${JSON.stringify(diag.dirs)}`);
     if (diag && diag.patch) say(`  patch.cfg: ${JSON.stringify(diag.patch)}; process ${JSON.stringify(diag.process)}`);
     if (diag && diag.events && diag.events.length) { say(`  last events on the node:`); for (const e of diag.events.slice(-24)) say(`    ${e}`); }
     return { node: node.host, ledger: s2.ledgerSeqNo, advancing: adv, unl: s2.currentUnl, peers: s2.peers, info, diag };

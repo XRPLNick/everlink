@@ -105,6 +105,27 @@ async function probeConnectivity(stateDir, targets = []) {
   return out;
 }
 
+// Layer-by-layer connectivity to the ledger from inside this process (read requests only):
+// DNS, TCP, TLS, raw WebSocket, xrpl.js client, evernode XrplApi. Each step has a short
+// timeout so the whole probe answers well inside HotPocket's read-request window.
+async function probeLayers(server, master) {
+  const url = new URL(server);
+  const host = url.hostname; const port = Number(url.port || 443);
+  const out = {}; const t = () => Date.now();
+  const step = async (name, fn, ms = 5000) => {
+    const t0 = t();
+    try { const r = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]); out[name] = `${r} ${t() - t0}ms`; }
+    catch (e) { out[name] = `ERR ${e && (e.code || e.message || e)} ${t() - t0}ms`; }
+  };
+  await step('dns', async () => (await dns.promises.lookup(host)).address);
+  await step('tcp', () => new Promise((res, rej) => { const s = net.connect({ host, port }); s.once('connect', () => { s.destroy(); res('open'); }); s.once('error', rej); }));
+  await step('tls', () => new Promise((res, rej) => { const tls = require('tls'); const s = tls.connect({ host, port, servername: host }, () => { const ok = s.authorized; const err = s.authorizationError; s.destroy(); res(ok ? 'authorized' : `unauthorized ${err}`); }); s.once('error', rej); }));
+  await step('ws', () => new Promise((res, rej) => { const WebSocket = require('ws'); const w = new WebSocket(server); w.once('open', () => { w.close(); res('open'); }); w.once('error', rej); }), 8000);
+  await step('xrpl.Client', async () => { const xrpl = require('xrpl'); const c = new xrpl.Client(server, { connectionTimeout: 6000 }); await c.connect(); const r = await c.request({ command: 'server_state' }); await c.disconnect(); return `server_state ${r.result.state.server_state} ledger ${r.result.state.validated_ledger && r.result.state.validated_ledger.seq}`; }, 9000);
+  await step('evernode.XrplApi', async () => { const evernode = require('evernode-js-client'); const api = new evernode.XrplApi(server, { autoReconnect: false }); await api.connect(); const acc = new evernode.XrplAccount(master, null, { xrplApi: api }); const info = await acc.getInfo(); await api.disconnect(); return `balance ${info.Balance} ledger ${api.ledgerIndex}`; }, 9000);
+  return out;
+}
+
 async function runRound(ctx, { stateDir, config, bridge = null, logger = null, diagFile = null, timeouts = {} }) {
   const observeTimeout = timeouts.observe || OBSERVE_TIMEOUT_MS;
   const afterTimeout = timeouts.after || AFTER_TIMEOUT_MS;
@@ -123,6 +144,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
           d.now = new Date().toISOString();
           d.state = { rounds: state.rounds, lastLcl: state.lastLcl, peers: Object.keys(state.peers || {}).length, channels: Object.keys(state.channels || {}).length, payouts: Object.keys(state.payouts || {}).length, treasury: state.treasury };
           if (req.probe) d.probe = await probeConnectivity(stateDir);
+          if (req.layers && bridge) d.layers = await probeLayers(bridge.rippleServer || 'wss://xahau.network', bridge.master).catch((e) => ({ error: String(e && e.message ? e.message : e) }));
           if (req.ledger && bridge && bridge.probeLedger) d.ledger = await bridge.probeLedger().catch((e) => ({ error: String(e && e.message ? e.message : e) }));
           if (diagFile) d.events = diagEvents(diagFile);
           d.process = { node: process.version, pid: process.pid, rssMb: Math.round(process.memoryUsage().rss / 1048576), uptimeS: Math.round(process.uptime()), cwd: process.cwd(), uid: typeof process.getuid === 'function' ? process.getuid() : null };
@@ -209,4 +231,4 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
   return { state, outputs: rc.outputs, intents: rc.intents };
 }
 
-module.exports = { runRound, collectInputs, probeConnectivity, diagMark };
+module.exports = { runRound, collectInputs, probeConnectivity, probeLayers, diagMark };

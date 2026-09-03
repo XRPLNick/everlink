@@ -18,7 +18,9 @@
     "ilp-packet": "3.1.4-alpha.2",
     "ilp-protocol-ildcp": "2.2.4-alpha.2",
     "ripple-binary-codec": "^2.10.0",
-    "ripple-keypairs": "^3.0.0"
+    "ripple-keypairs": "^3.0.0",
+    "xrpl": "^4.0.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@vercel/ncc": "0.38.3"
