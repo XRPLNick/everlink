@@ -40,7 +40,9 @@ async function main() {
     aliceX = await L.faucetAccount(client, tenant.server);
     bobX = await L.faucetAccount(client, tenant.server);
   }
-  const aliceWallet = L.xrpl.Wallet.fromSeed(aliceX.seed);
+  // xrpl.js 4 derives an ed25519 key from a seed unless told otherwise; our accounts are secp256k1.
+  const aliceWallet = L.xrpl.Wallet.fromSeed(aliceX.seed, { algorithm: 'ecdsa-secp256k1' });
+  if (aliceWallet.classicAddress !== aliceX.address) throw new Error(`wallet address ${aliceWallet.classicAddress} != ${aliceX.address}`);
   say(`Alice ${aliceX.address} (${aliceX.xah} XAH), Bob ${bobX.address} (${bobX.xah} XAH), master ${XAH(await L.xahBalance(client, master) * 1e6)}`);
 
   say('Alice opens a 5 XAH payment channel to the cluster account ...');
