@@ -104,15 +104,23 @@ class XahauBridge {
 
   // Read-request helper ({"t":"diag","ledger":true}): can this node reach the ledger through
   // everpocket's XrplContext, and how long does it take? Never used in consensus rounds.
-  async probeLedger(ctx) {
+  async probeLedger() {
+    // Plain evernode-js-client XrplApi (no everpocket XrplContext: that one writes
+    // transactions.json into the state directory, which read requests cannot do).
     const t0 = Date.now(); const out = {};
+    let api = null;
     try {
-      const xrpl = await this._xrpl(ctx); out.initMs = Date.now() - t0;
-      const info = await xrpl.xrplAcc.getInfo(); out.balance = info && info.Balance; out.infoMs = Date.now() - t0;
-      out.ledgerIndex = xrpl.xrplApi.ledgerIndex; out.signers = xrpl.signerListInfo ? xrpl.signerListInfo.signerList.length : 0; out.quorum = xrpl.signerListInfo && xrpl.signerListInfo.signerQuorum;
-      out.isSigner = typeof xrpl.isSigner === 'function' ? xrpl.isSigner() : null;
+      const evernode = require('evernode-js-client');
+      await evernode.Defaults.useNetwork(this.network);
+      api = new evernode.XrplApi(this.rippleServer || undefined, { autoReconnect: false });
+      await api.connect(); out.connectMs = Date.now() - t0;
+      const acc = new evernode.XrplAccount(this.master, null, { xrplApi: api });
+      const info = await acc.getInfo(); out.balance = info && info.Balance; out.infoMs = Date.now() - t0;
+      out.ledgerIndex = api.ledgerIndex;
+      const signers = await acc.getAccountObjects({ type: 'signer_list' }); out.signerList = signers.length ? `${signers[0].SignerEntries.length} signers, quorum ${signers[0].SignerQuorum}` : 'none';
+      out.totalMs = Date.now() - t0;
     } catch (e) { out.error = String(e && e.message ? e.message : e); out.failedAfterMs = Date.now() - t0; }
-    try { const r = this._contexts(ctx); if (r.xrplReady) await r.xrplContext.deinit(); } catch (e) { /* ignore */ }
+    try { if (api) await api.disconnect(); } catch (e) { /* ignore */ }
     return out;
   }
 

@@ -39,15 +39,24 @@ function withTimeout(promise, ms, label) {
 
 // Append-only progress marks (one line each) so a hung round can be located from another
 // process: {"t":"diag"} returns the tail of this file too.
+// HotPocket runs read requests from a read-only view of the state, so the marks are written
+// wherever they can be (next to the diag file, and /tmp as a fallback shared by every
+// execution in the instance) and read back from all of those places.
+function eventFiles(file) {
+  const base = file.replace(/\.json$/, '') + '-events.log';
+  return [base, path.join(require('os').tmpdir(), 'nomad-diag-events.log')];
+}
 function diagMark(file, text) {
   if (!file) return;
-  try {
-    const f = file.replace(/\.json$/, '') + '-events.log';
-    fs.appendFileSync(f, `${new Date().toISOString()} pid ${process.pid} ${text}\n`);
-  } catch (e) { /* best effort */ }
+  const line = `${new Date().toISOString()} pid ${process.pid} ${text}\n`;
+  for (const f of eventFiles(file)) { try { fs.appendFileSync(f, line); } catch (e) { /* best effort */ } }
 }
 function diagEvents(file) {
-  try { return fs.readFileSync(file.replace(/\.json$/, '') + '-events.log', 'utf8').trim().split('\n').slice(-40); } catch (e) { return []; }
+  const seen = new Set(); const out = [];
+  for (const f of eventFiles(file)) {
+    try { for (const l of fs.readFileSync(f, 'utf8').trim().split('\n')) if (l && !seen.has(l)) { seen.add(l); out.push(l); } } catch (e) { /* absent */ }
+  }
+  return out.sort().slice(-60);
 }
 
 function diagLoad(file) {
@@ -114,9 +123,10 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
           d.now = new Date().toISOString();
           d.state = { rounds: state.rounds, lastLcl: state.lastLcl, peers: Object.keys(state.peers || {}).length, channels: Object.keys(state.channels || {}).length, payouts: Object.keys(state.payouts || {}).length, treasury: state.treasury };
           if (req.probe) d.probe = await probeConnectivity(stateDir);
-          if (req.ledger && bridge && bridge.probeLedger) d.ledger = await bridge.probeLedger(ctx).catch((e) => ({ error: String(e && e.message ? e.message : e) }));
+          if (req.ledger && bridge && bridge.probeLedger) d.ledger = await bridge.probeLedger().catch((e) => ({ error: String(e && e.message ? e.message : e) }));
           if (diagFile) d.events = diagEvents(diagFile);
-          d.process = { node: process.version, pid: process.pid, rssMb: Math.round(process.memoryUsage().rss / 1048576), uptimeS: Math.round(process.uptime()) };
+          d.process = { node: process.version, pid: process.pid, rssMb: Math.round(process.memoryUsage().rss / 1048576), uptimeS: Math.round(process.uptime()), cwd: process.cwd(), uid: typeof process.getuid === 'function' ? process.getuid() : null };
+          try { d.dirs = { state: fs.readdirSync(stateDir).slice(0, 40), parent: fs.readdirSync(path.join(stateDir, '..')).slice(0, 40), tmp: fs.readdirSync(require('os').tmpdir()).filter((f) => f.startsWith('nomad')) }; } catch (e) { d.dirs = { error: e.message }; }
           try { const patch = JSON.parse(fs.readFileSync(fs.existsSync(path.join(stateDir, '..', 'patch.cfg')) ? path.join(stateDir, '..', 'patch.cfg') : path.join(stateDir, 'patch.cfg'), 'utf8')); d.patch = { consensus: patch.consensus, round_limits: patch.round_limits, npl: patch.npl, unl: (patch.unl || []).length, version: patch.version }; } catch (e) { d.patch = null; }
           await user.send(JSON.stringify({ t: 'diag', ...d }));
           continue;
