@@ -38,7 +38,7 @@ const tracer = new Tracer();
 async function writeTrace() {
   await tracer.analyse();
   const head = [
-    `ILP/STREAM packet trace through the Nomad Connector cluster on Xahau ${net}, ${new Date().toISOString()}`,
+    `ILP/STREAM packet trace through the Everlink cluster on Xahau ${net}, ${new Date().toISOString()}`,
     `cluster account ${tenant.address}; nodes ${nodes.map((n) => `${n.domain}:${n.userPort}`).join(', ')}`,
     'Every line is a real ILP packet (RFC 27) as seen by the two peers\' plugins, with the STREAM frames inside decrypted (RFC 29).',
     '',

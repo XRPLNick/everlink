@@ -11,9 +11,9 @@ process.env.WS_NO_UTF_8_VALIDATE = '1';
 // once per read request) with the state directory as the working directory; everything
 // this process needs to remember is in that directory.
 //
-// Configuration comes from `nomad.config.json` next to the contract binary (deployed with
+// Configuration comes from `everlink.config.json` next to the contract binary (deployed with
 // it, so it is part of the consensus state and identical on every node). See
-// nomad.config.example.json for the fields.
+// everlink.config.example.json for the fields.
 
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +21,7 @@ const HotPocket = require('hotpocket-nodejs-contract');
 const { runRound, diagMark } = require('./round');
 const { makeConfig } = require('./core/connector');
 
-const CONFIG_FILE = 'nomad.config.json';
+const CONFIG_FILE = 'everlink.config.json';
 const ROUND_WATCHDOG_MS = 120000;
 
 function loadConfig() {
@@ -42,7 +42,7 @@ async function main() {
   if (xahauEnabled && !config.masterAddress) throw new Error('connector.masterAddress (the cluster multisig account) is required when xahau is enabled');
 
   // Per-node diagnostics live next to the signer key, outside the consensus state directory.
-  const diagFile = path.join(process.cwd(), '..', 'nomad-diag.json');
+  const diagFile = path.join(process.cwd(), '..', 'everlink-diag.json');
   const logger = (...a) => { console.log(new Date().toISOString(), ...a); diagMark(diagFile, a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')); };
 
   let bridge = null;
@@ -72,7 +72,7 @@ async function main() {
     diagMark(diagFile, `contract called: ${ctx.readonly ? 'readonly' : `consensus lcl ${ctx.lclSeqNo}`}, ${ctx.users.list().length} users, rss ${rss()}`);
     // Watchdog: a round that is still running after this long (a stalled ledger connection,
     // a vote nobody answers) must not block the node forever; give up on it.
-    const watchdog = setTimeout(() => { console.error('nomad-connector: round watchdog fired, exiting'); process.exit(2); }, ROUND_WATCHDOG_MS);
+    const watchdog = setTimeout(() => { console.error('everlink: round watchdog fired, exiting'); process.exit(2); }, ROUND_WATCHDOG_MS);
     watchdog.unref();
     try {
       await runRound(ctx, {
@@ -87,10 +87,10 @@ async function main() {
   diagMark(diagFile, `hpc.init -> ${ok}`);
 }
 
-if (process.env.NOMAD_PROBE === 'layers') {
+if (process.env.EVERLINK_PROBE === 'layers') {
   // Child process of a {"t":"diag","layers":true} read request: probe and print, never touch HotPocket.
-  require('./round').probeLayersInline(process.env.NOMAD_PROBE_SERVER || 'wss://xahau.network', process.env.NOMAD_PROBE_MASTER || '')
+  require('./round').probeLayersInline(process.env.EVERLINK_PROBE_SERVER || 'wss://xahau.network', process.env.EVERLINK_PROBE_MASTER || '')
     .then(() => process.exit(0), (e) => { console.log(`probe failed: ${e && e.message}`); process.exit(1); });
 } else {
-  main().catch((e) => { console.error('nomad-connector fatal:', e); process.exit(1); });
+  main().catch((e) => { console.error('everlink fatal:', e); process.exit(1); });
 }

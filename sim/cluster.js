@@ -1,6 +1,6 @@
 'use strict';
 
-// Convenience: a simulated Nomad Connector cluster wired to a mock Xahau ledger.
+// Convenience: a simulated Everlink cluster wired to a mock Xahau ledger.
 // Returns everything a test or demo needs to act as peers of the connector.
 
 const { SimCluster, SimClient, edKeys } = require('./hotpocket-sim');
@@ -9,7 +9,7 @@ const { MockBridge } = require('./mock-bridge');
 const { runRound } = require('../contract/src/round');
 const { makeConfig } = require('../contract/src/core/connector');
 
-const MASTER = 'rNomadConnectorMultisigAccount1234'; // the cluster's multisig account (mock)
+const MASTER = 'rEverlinkMultisigAccount1234567890'; // the cluster's multisig account (mock)
 
 function createSimConnector({ nodeCount = 3, roundTimeMs = 40, config = {}, factsEvery = 1, leases = true, logger = null } = {}) {
   const cfg = makeConfig({ masterAddress: MASTER, ...config });

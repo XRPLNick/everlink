@@ -44,7 +44,7 @@ function withTimeout(promise, ms, label) {
 // execution in the instance) and read back from all of those places.
 function eventFiles(file) {
   const base = file.replace(/\.json$/, '') + '-events.log';
-  return [base, path.join(require('os').tmpdir(), 'nomad-diag-events.log')];
+  return [base, path.join(require('os').tmpdir(), 'everlink-diag-events.log')];
 }
 function diagMark(file, text) {
   if (!file) return;
@@ -107,7 +107,7 @@ async function probeConnectivity(stateDir, targets = []) {
 
 // Layer-by-layer connectivity to the ledger (read requests only): DNS, TCP, TLS, raw
 // WebSocket, xrpl.js client, evernode XrplApi. Runs in a child process (this same bundle,
-// started with NOMAD_PROBE=layers) so that a step which blocks the event loop cannot take the
+// started with EVERLINK_PROBE=layers) so that a step which blocks the event loop cannot take the
 // read request down with it: each step prints its line as soon as it finishes and the child
 // is killed after a wall-clock limit, whatever it is stuck in.
 async function probeLayersInline(server, master) {
@@ -143,7 +143,7 @@ function probeLayers(server, master, entry = process.argv[1], limitMs = 45000) {
     const { spawn } = require('child_process');
     const out = []; let child;
     try {
-      child = spawn(process.execPath, [entry], { env: { ...process.env, NOMAD_PROBE: 'layers', NOMAD_PROBE_SERVER: server, NOMAD_PROBE_MASTER: master }, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(process.execPath, [entry], { env: { ...process.env, EVERLINK_PROBE: 'layers', EVERLINK_PROBE_SERVER: server, EVERLINK_PROBE_MASTER: master }, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) { resolve({ error: `spawn: ${e.message}` }); return; }
     const timer = setTimeout(() => { out.push('KILLED after wall-clock limit'); try { child.kill('SIGKILL'); } catch (e) { /* ignore */ } }, limitMs);
     child.stdout.on('data', (d) => out.push(...d.toString().split('\n').filter(Boolean)));

@@ -1,4 +1,4 @@
-# Nomad Connector
+# Everlink
 
 An Interledger connector that nobody runs.
 
@@ -39,7 +39,7 @@ npm run demo                       # narrated run: pay, settle, pay the hosts
              │  {"t":"ilp", id, ILP Prepare}                        ▲
              ▼                                                      │ forwarded Prepare
    ┌──────────────────────── HotPocket user channel ─────────────────────────┐
-   │        Nomad Connector — one contract, N nodes, one consensus round     │
+   │        Everlink — one contract, N nodes, one consensus round     │
    │  facts (voted) ─► process inputs ─► sweep expiries ─► plan settlement   │
    │  balances │ pending packets │ channels & claims │ payouts │ treasury    │
    └────────────────────────────┬────────────────────────────────────────────┘
@@ -73,7 +73,7 @@ contract/            the HotPocket contract (bundled with ncc for deployment)
   src/round.js       one consensus round: inputs -> facts -> core -> intents -> outputs -> persist
   src/adapters/      xahau-bridge.js (everpocket: votes, multisig, Nomad), npl-vote.js
   src/index.js       HotPocket entry point (hotpocket-nodejs-contract)
-  nomad.config.example.json, hp.cfg.override
+  everlink.config.example.json, hp.cfg.override
 plugin/              ilp-plugin-hotpocket: the ilp-plugin interface over the HotPocket user channel
 sim/                 in-process HotPocket simulator + mock Xahau (channels, multisig, DEX, leases)
 test/                unit, simulator, STREAM end-to-end and production-bridge tests

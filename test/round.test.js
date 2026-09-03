@@ -26,8 +26,8 @@ function fakeCtx({ readonly = false, lclSeqNo = 1, inputs = [] } = {}) {
 }
 
 test('a hanging observe/afterRound is abandoned and recorded; diag read request returns it', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nomad-round-'));
-  const diagFile = path.join(dir, 'nomad-diag.json');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'everlink-round-'));
+  const diagFile = path.join(dir, 'everlink-diag.json');
   const config = makeConfig({ masterAddress: 'rMaster' });
   const never = () => new Promise(() => {});
   const bridge = { observe: never, submit: async () => [], afterRound: never };

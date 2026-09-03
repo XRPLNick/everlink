@@ -73,7 +73,9 @@ does the rest.
   anyone can re-decode them with `ilp-packet` and re-check the SHA-256s.
 
 What it shows, in order: both peers ask the connector for their ILP address with ILDCP
-(`peer.config`, RFC 31) and get `g.nomad.<their HotPocket public key>`; Alice's STREAM client
+(`peer.config`, RFC 31) and get `g.nomad.<their HotPocket public key>` (`g.nomad` was the
+prefix this cluster was configured with, before the project was renamed Everlink; new
+deployments default to `g.everlink`); Alice's STREAM client
 sends its rate probes (1, 1 000, 1 000 000, 10⁹ and 10¹² drops, all with unfulfillable
 conditions — the 10⁹ one is refused by the connector as `T04 insufficient prepaid balance`, the
 10¹² one as `F08 packet exceeds maximum amount`, the rest reach Bob and come back `F99` with

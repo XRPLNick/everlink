@@ -14,7 +14,7 @@ const { runRound } = require('../contract/src/round');
 const { makeConfig } = require('../contract/src/core/connector');
 const H = require('./helpers');
 
-const MASTER = 'rNomadMasterAccountFake111111111111';
+const MASTER = 'rEverlinkMasterAccountFake1111111111';
 
 function fakeEverpocket(mock, calls) {
   // Same shape as everpocket's VoteContext: the bridge registers ctx.unl.onMessage once and

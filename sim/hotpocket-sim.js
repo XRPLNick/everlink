@@ -117,7 +117,7 @@ class NplBus {
 }
 
 class SimCluster extends EventEmitter {
-  constructor({ nodeCount = 3, roundTimeMs = 50, contractId = 'nomad-sim', handler, baseDir = null, clock = () => Date.now() } = {}) {
+  constructor({ nodeCount = 3, roundTimeMs = 50, contractId = 'everlink-sim', handler, baseDir = null, clock = () => Date.now() } = {}) {
     super();
     if (typeof handler !== 'function') throw new Error('handler(ctx) required');
     this.handler = handler;

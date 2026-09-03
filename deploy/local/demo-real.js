@@ -2,7 +2,7 @@
 'use strict';
 
 // Real-cluster demo: Alice connects to node 1 and Bob to node 2 of a local hpdevkit cluster
-// running the Nomad Connector contract (ledger disabled, dev faucet on). Alice pays Bob with
+// running the Everlink contract (ledger disabled, dev faucet on). Alice pays Bob with
 // the unmodified ilp-protocol-stream library through the cluster.
 //
 //   node deploy/local/demo-real.js [alice-server] [bob-server]

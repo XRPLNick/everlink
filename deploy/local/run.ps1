@@ -1,4 +1,4 @@
-# Runs the Nomad Connector on a local 3-node HotPocket cluster (hpdevkit + Docker Desktop)
+# Runs the Everlink on a local 3-node HotPocket cluster (hpdevkit + Docker Desktop)
 # and pays through it with a real ILP/STREAM client. Everything is logged to deploy\local\out\.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File deploy\local\run.ps1
 $ErrorActionPreference = "Continue"
@@ -26,7 +26,7 @@ cmd /c "node `"$hpkIndex`" version 2>&1"
 
 Step "deploy contract to a 3-node cluster"
 Set-Location (Join-Path $root "contract")
-$distDir = if ($env:NOMAD_DIST) { $env:NOMAD_DIST } else { "dist" }
+$distDir = if ($env:EVERLINK_DIST) { $env:EVERLINK_DIST } else { "dist" }
 $env:HP_CLUSTER_SIZE = "3"
 $env:HP_DEFAULT_NODE = "0"   # 0 = do not stream node logs after deploy (deploy returns)
 $deployLog = Join-Path $out "deploy.log"
@@ -35,7 +35,7 @@ $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "h
 $distHash = (Get-FileHash -Algorithm SHA256 (Join-Path $root "contract\$distDir\index.js")).Hash
 $shaFile = Join-Path $out "deployed.sha"
 $deployed = if (Test-Path $shaFile) { (Get-Content $shaFile -Raw).Trim() } else { "" }
-if ($names.Count -ge 3 -and $deployed -eq $distHash -and -not $env:NOMAD_REDEPLOY) {
+if ($names.Count -ge 3 -and $deployed -eq $distHash -and -not $env:EVERLINK_REDEPLOY) {
   Write-Host "cluster already running ($($names.Count) nodes) with the current contract build; skipping deploy"
 } else {
   if ($names.Count -ge 3) { Write-Host "contract build changed; redeploying" }
@@ -55,7 +55,7 @@ docker ps --format "{{.Names}}  {{.Status}}  {{.Ports}}"
 Step "node logs"
 foreach ($n in $names) { Write-Host "--- $n"; cmd /c "docker logs --tail 12 $n 2>&1" }
 
-if ($env:NOMAD_SKIP_DEMO) {
+if ($env:EVERLINK_SKIP_DEMO) {
   Step "ledger-observe soak: letting the cluster run rounds against Xahau for 4 minutes (no demo)"
   Start-Sleep -Seconds 240
 } else {

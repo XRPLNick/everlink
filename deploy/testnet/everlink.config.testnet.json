@@ -1,6 +1,6 @@
 {
   "connector": {
-    "ilpAddress": "g.nomad.testnet",
+    "ilpAddress": "g.everlink.testnet",
     "assetCode": "XAH",
     "assetScale": 6,
     "feeBps": 25,

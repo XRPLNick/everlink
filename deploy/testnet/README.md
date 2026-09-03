@@ -1,7 +1,7 @@
-# Nomad Connector on Evernode (testnet or mainnet)
+# Everlink on Evernode (testnet or mainnet)
 
 One PowerShell script, `deploy/testnet/run.ps1`, driven by the launchers in the repo root.
-`EV_NETWORK` picks the network (testnet, devnet, mainnet), `NOMAD_STAGE` the stage
+`EV_NETWORK` picks the network (testnet, devnet, mainnet), `EVERLINK_STAGE` the stage
 (`hosts`, `keys`, `status`, `deploy`, `demo`, `trace`, `withdraw`). Everything is logged under `deploy/testnet/out/`; when a
 stage fails, the `DONE` file names the reason (`no-tenant`, `no-xah`, `no-evr`, `no-hosts`,
 `no-cluster`, ...). Fix the cause and run again: finished stages are skipped.
@@ -16,7 +16,7 @@ scripts only ever spend from the tenant account when *you* launch the deploy or 
 | `run-mainnet-hosts.cmd` | lists active hosts with free slots and their lease prices (`out/hosts.log`, `hosts.mainnet.txt`) | nothing (read-only) |
 | `run-mainnet-keys.cmd` | generates the tenant (= the connector's multisig account), Alice and Bob key pairs into git-ignored files on this machine and prints the addresses to fund | nothing |
 | *you* | send **10 XAH** to the tenant, **8 XAH** to Alice, **2 XAH** to Bob | 20 XAH stay yours, minus fees |
-| `run-mainnet.cmd` | adds an EVR trust line to the tenant if missing (fee only) and stops with `no-evr` until the tenant holds EVR; then `evdevkit cluster-create`: buys 3 leases for 4 moments (about 0.000012 EVR on the cheapest reputable hosts, capped by `NOMAD_EVR_LIMIT`, default: the whole EVR balance), installs a 3-signer SignerList (2-of-3) on the tenant account and uploads the contract | lease EVR + fees; ~2 XAH of reserve gets locked (SignerList, trust line, 3 lease tokens) |
+| `run-mainnet.cmd` | adds an EVR trust line to the tenant if missing (fee only) and stops with `no-evr` until the tenant holds EVR; then `evdevkit cluster-create`: buys 3 leases for 4 moments (about 0.000012 EVR on the cheapest reputable hosts, capped by `EVERLINK_EVR_LIMIT`, default: the whole EVR balance), installs a 3-signer SignerList (2-of-3) on the tenant account and uploads the contract | lease EVR + fees; ~2 XAH of reserve gets locked (SignerList, trust line, 3 lease tokens) |
 | *you* | send **1 EVR** to the tenant once the trust line exists (any amount works; the leases cost microscopic sums) | 1 EVR |
 | `run-mainnet-demo.cmd` | Alice opens a 5 XAH channel to the cluster account, claims 3 XAH, pays Bob 1 XAH over STREAM; the cluster redeems the claim and pays Bob out with multisigned transactions; Alice then asks to close and the cluster closes the channel, returning her unspent 2 XAH | 1 XAH goes Alice -> Bob (fee 0.0025 XAH stays in the cluster account) |
 | `run-mainnet-trace.cmd` | the same payment again (2 XAH channel, 1 XAH claim, 1 XAH over STREAM) with every ILP packet recorded and decoded into `out/stream-trace.txt` / `.json`; Bob is paid out and Alice's channel closed as in the demo | 1 XAH Alice -> Bob (fee 0.0025 XAH) |
@@ -25,8 +25,8 @@ After the demo the tenant account holds its 10 XAH + 3 XAH redeemed - 0.9975 XAH
 the master key still controls it, so you can sweep it whenever you like. Retiring that key
 (so no person controls the connector) is deliberately not automated: it is irreversible.
 
-Knobs: `NOMAD_SIZE` (nodes = signers, default 3), `NOMAD_MOMENTS` (lease length, default 4 =
-4 hours on mainnet), `NOMAD_EVR_LIMIT`. Mainnet-only config patches applied by `run.ps1`:
+Knobs: `EVERLINK_SIZE` (nodes = signers, default 3), `EVERLINK_MOMENTS` (lease length, default 4 =
+4 hours on mainnet), `EVERLINK_EVR_LIMIT`. Mainnet-only config patches applied by `run.ps1`:
 `reserveDrops` 5 XAH (never paid out), `evrReserve` 0.01 EVR (no DEX top-ups during the demo).
 
 ## Testnet
@@ -38,7 +38,7 @@ faucet (`tenant.js`, `lib.js`) and the EVR is requested from the foundation's gi
    line and asks for the test EVR gift. Writes `tenant.testnet.json` (git-ignored).
 2. **user keys** - `evdevkit keygen` -> `user.testnet.keys.json` (the tenant's HotPocket user identity).
 3. **hosts.js** - hosts with free slots -> `hosts.testnet.txt` (best candidates first).
-4. **config** - patches `contract/dist/nomad.config.json` with the tenant address, EVR issuer,
+4. **config** - patches `contract/dist/everlink.config.json` with the tenant address, EVR issuer,
    Xahau server and preferred hosts (build the dist first: `npm run build:testnet --workspace contract`).
 5. **cluster-create** - `evdevkit cluster-create 3 ... --signer-count 3 --signer-quorum 0.6 -m 4`:
    acquires 3 instances, generates one signer key per node, sets the SignerList on the tenant

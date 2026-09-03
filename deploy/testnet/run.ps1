@@ -1,4 +1,4 @@
-﻿# Nomad Connector on Evernode TESTNET, end to end. Staged and re-runnable: every stage that has
+﻿# Everlink on Evernode TESTNET, end to end. Staged and re-runnable: every stage that has
 # already produced its output is skipped, so after a failure you fix the cause and run again.
 #   deploy\testnet\run.ps1   (or double-click run-testnet.cmd)
 # Logs: deploy\testnet\out\ ; secrets (testnet only): deploy\testnet\tenant.json, user.keys.json
@@ -22,7 +22,7 @@ if (-not (Test-Path (Join-Path $root "node_modules\xrpl"))) { Fail "no-xrpl" "no
 if (-not (Test-Path (Join-Path $dist "index.js"))) { Fail "no-dist" "contract\dist\index.js missing (npm run build:testnet --workspace contract)" }
 if (-not $env:EV_NETWORK) { $env:EV_NETWORK = "testnet" }
 $net = $env:EV_NETWORK
-$stage = if ($env:NOMAD_STAGE) { $env:NOMAD_STAGE } else { "deploy" }   # hosts | keys | status | deploy | demo | trace | withdraw
+$stage = if ($env:EVERLINK_STAGE) { $env:EVERLINK_STAGE } else { "deploy" }   # hosts | keys | status | deploy | demo | trace | withdraw
 Write-Host "Evernode network: $net   stage: $stage"
 if ($stage -eq "hosts") {
   Step "hosts with free instance slots ($net) - read-only"
@@ -83,22 +83,22 @@ Write-Host "hosts to use: $($addrs.Count)"
 if ($addrs.Count -lt 3) { Fail "no-hosts" "fewer than 3 hosts with free slots on testnet (see out\hosts.log)" }
 
 Step "4. connector config for this tenant"
-$cfgPath = Join-Path $dist "nomad.config.json"
+$cfgPath = Join-Path $dist "everlink.config.json"
 node (Join-Path $here "patch-config.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "patch-config.log")
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path $cfgPath) -or (Get-Item $cfgPath).Length -lt 100) { Fail "no-config" "could not write contract\dist\nomad.config.json (see out\patch-config.log)" }
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $cfgPath) -or (Get-Item $cfgPath).Length -lt 100) { Fail "no-config" "could not write contract\dist\everlink.config.json (see out\patch-config.log)" }
 
 if ($stage -eq "withdraw") {
   Step "pay a demo peer's unspent connector credit back to its account ($net)"
   if (-not (Test-Path (Join-Path $dist "cluster.json"))) { Fail "no-cluster" "no contract\dist\cluster.json - deploy first" }
   $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
-  node (Join-Path $here "withdraw.js") $(if ($env:NOMAD_PEER) { $env:NOMAD_PEER } else { "alice" }) 2>&1 | Tee-Object -FilePath (Join-Path $out "withdraw.log")
+  node (Join-Path $here "withdraw.js") $(if ($env:EVERLINK_PEER) { $env:EVERLINK_PEER } else { "alice" }) 2>&1 | Tee-Object -FilePath (Join-Path $out "withdraw.log")
   Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
 }
 if ($stage -eq "trace") {
   Step "packet-level ILP/STREAM trace through the cluster on $net (stage=trace)"
   if (-not (Test-Path (Join-Path $dist "cluster.json"))) { Fail "no-cluster" "no contract\dist\cluster.json - deploy first" }
   $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
-  node (Join-Path $here "trace-stream.js") $(if ($env:NOMAD_AMOUNT) { $env:NOMAD_AMOUNT } else { "1000000" }) 2>&1 | Tee-Object -FilePath (Join-Path $out "trace.log")
+  node (Join-Path $here "trace-stream.js") $(if ($env:EVERLINK_AMOUNT) { $env:EVERLINK_AMOUNT } else { "1000000" }) 2>&1 | Tee-Object -FilePath (Join-Path $out "trace.log")
   Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
 }
 if ($stage -eq "demo") {
@@ -109,8 +109,8 @@ if ($stage -eq "demo") {
   Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
 }
 
-$size = if ($env:NOMAD_SIZE) { [int]$env:NOMAD_SIZE } else { 3 }
-$moments = if ($env:NOMAD_MOMENTS) { [int]$env:NOMAD_MOMENTS } else { 4 }
+$size = if ($env:EVERLINK_SIZE) { [int]$env:EVERLINK_SIZE } else { 3 }
+$moments = if ($env:EVERLINK_MOMENTS) { [int]$env:EVERLINK_MOMENTS } else { 4 }
 # evdevkit rounds quorum*signers up: 0.8 on 3 signers is 3-of-3, which lets one dead host freeze
 # the account. Use 2-of-3 for tiny clusters, 80% from 5 nodes on (everpocket's default).
 $quorum = if ($size -le 4) { 0.6 } else { 0.8 }
@@ -123,8 +123,8 @@ if ([double]$bal.evr -le 0) {
 }
 # Hard cap on what cluster-create may spend on leases: evdevkit refuses to start if the estimated
 # cost (cheapest preferred hosts x moments) exceeds it. Default: the tenant's whole EVR balance,
-# override with NOMAD_EVR_LIMIT.
-$evrLimit = if ($env:NOMAD_EVR_LIMIT) { $env:NOMAD_EVR_LIMIT } else { $bal.evr }
+# override with EVERLINK_EVR_LIMIT.
+$evrLimit = if ($env:EVERLINK_EVR_LIMIT) { $env:EVERLINK_EVR_LIMIT } else { $bal.evr }
 Write-Host "EVR limit for leases: $evrLimit"
 $clusterFile = Join-Path $dist "cluster.json"
 if (-not (Test-Path $clusterFile)) {

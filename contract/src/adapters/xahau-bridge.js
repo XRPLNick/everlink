@@ -30,10 +30,10 @@ const NETWORK_DEFINITIONS = {
 function useOfflineDefinitions() {
   try {
     const { Defaults } = require('evernode-js-client');
-    if (Defaults.__nomadOffline) return;
+    if (Defaults.__everlinkOffline) return;
     const original = Defaults.useNetwork.bind(Defaults);
     Defaults.useNetwork = async (network) => { if (NETWORK_DEFINITIONS[network]) Defaults.set(NETWORK_DEFINITIONS[network]); else await original(network); };
-    Defaults.__nomadOffline = true;
+    Defaults.__everlinkOffline = true;
   } catch (e) { /* tests inject a fake everpocket without evernode-js-client */ }
 }
 // everpocket ClusterMessageType values (models/cluster): messages from cluster nodes, not peers.
@@ -165,7 +165,7 @@ class XahauBridge {
     // --- agree ---
     mark(`queried: ledger ${local.ledgerIndex}, balance ${local.masterBalance}, ${channels.length} channels; voting`);
     const unlCount = r.hpContext.getContractUnl().length;
-    const votes = await r.voteContext.vote(`nomad-facts-${ctx.lclSeqNo}`, [local], new this.evp.AllVoteElector(unlCount, TIMEOUT_MS));
+    const votes = await r.voteContext.vote(`everlink-facts-${ctx.lclSeqNo}`, [local], new this.evp.AllVoteElector(unlCount, TIMEOUT_MS));
     mark(`votes: ${votes.length}/${unlCount}`);
     const agreed = majority(votes.map((v) => ({ sender: v.sender.publicKey, data: v.data })));
     if (!agreed) throw new Error('no facts agreed this round');

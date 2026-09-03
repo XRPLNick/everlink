@@ -1,5 +1,5 @@
 {
-  "name": "nomad-connector",
+  "name": "everlink",
   "version": "0.1.0",
   "private": true,
   "description": "An Interledger connector that runs as a self-funding HotPocket contract on Evernode (Xahau). Prototype.",

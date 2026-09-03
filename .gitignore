@@ -3,7 +3,7 @@ contract/dist/
 scratch/
 *.log
 .DS_Store
-contract/nomad.config.json
+contract/everlink.config.json
 deploy/local/out/
 deploy/testnet/tenant.json
 deploy/testnet/out/

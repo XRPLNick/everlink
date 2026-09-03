@@ -1,4 +1,4 @@
-# Deploying the Nomad Connector
+# Deploying Everlink
 
 Two kits, both driven by PowerShell scripts with `.cmd` launchers in the repository root
 (they were written on Windows; every step is a plain `node` or dev-kit command and ports to a
@@ -24,7 +24,7 @@ The manual equivalent, for a local cluster that signs on a real ledger:
 
 ```bash
 cd contract
-cp nomad.config.example.json nomad.config.json   # set connector.masterAddress, xahau.network
+cp everlink.config.example.json everlink.config.json   # set connector.masterAddress, xahau.network
 npm run build                                    # ncc bundle -> dist/
 hpdevkit deploy dist -m -s <master-account-secret>
 #   -m: every node gets its own signer key (kept outside consensus state as ../<master>.key)
@@ -58,7 +58,7 @@ evdevkit cluster-create 3 $PWD/contract/dist /usr/bin/node deploy/testnet/hosts.
 account — the multisig layout `everpocket`'s `XrplContext` expects. `--signer-quorum` is a
 fraction of the signers, rounded up (0.6 of 3 = 2-of-3; 0.8 of 3 = 3-of-3). The tenant
 account **is** the connector's `masterAddress`; `patch-config.js` writes it into the bundled
-`nomad.config.json` before upload.
+`everlink.config.json` before upload.
 
 After the cluster is up: fund the account with XAH (≥ `reserveDrops` + a working float) and
 give it an EVR trust line and some EVR (hosts are paid in EVR); peers connect to any node's

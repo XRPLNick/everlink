@@ -1,6 +1,6 @@
 'use strict';
 
-// The deterministic heart of the Nomad Connector.
+// The deterministic heart of the Everlink.
 //
 // One call of processRound() is one HotPocket consensus round. It takes the persisted
 // state, the agreed inputs of the round (user messages, consensus timestamp, ledger
@@ -33,7 +33,7 @@ const TF_CLOSE = 0x00020000;      // PaymentChannelClaim flag: close the channel
 
 const DEFAULT_CONFIG = Object.freeze({
   // ILP
-  ilpAddress: 'g.nomad',            // peers get `${ilpAddress}.${peerPubkey}`
+  ilpAddress: 'g.everlink',            // peers get `${ilpAddress}.${peerPubkey}`
   assetCode: 'XAH',
   assetScale: 6,                    // drops
   feeBps: 10,                       // 0.10% spread

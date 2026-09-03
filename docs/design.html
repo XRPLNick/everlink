@@ -1,4 +1,4 @@
-<title>Nomad Connector</title>
+<title>Everlink</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root {
@@ -141,12 +141,12 @@
 <div class="page">
 <header class="doc">
   <p class="eyebrow">Design note · Interledger × Evernode</p>
-  <h1>Nomad Connector</h1>
+  <h1>Everlink</h1>
   <p class="dek">An Interledger connector that runs as a HotPocket contract on Evernode: nobody operates it, peers pay for it as they use it, and it pays its own hosts in EVR from a Xahau account only the cluster can sign for.</p>
   <div class="meta">
     <span><span class="status">ran on Evernode mainnet</span></span>
     <span>date <b>3 September 2026</b></span>
-    <span>code <b>nomad-connector</b> (contract · plugin · simulator · 20 tests · local cluster · Evernode mainnet settlement)</span>
+    <span>code <b>everlink</b> (contract · plugin · simulator · 20 tests · local cluster · Evernode mainnet settlement)</span>
     <span>origin <b>forum.interledger.org/t/126</b>, March 2019</span>
   </div>
 </header>
@@ -195,7 +195,7 @@
 
         <!-- Cluster -->
         <rect x="270" y="30" width="360" height="400" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4"></rect>
-        <text x="450" y="54" text-anchor="middle" font-weight="600">Nomad Connector cluster (Evernode)</text>
+        <text x="450" y="54" text-anchor="middle" font-weight="600">Everlink cluster (Evernode)</text>
 
         <rect x="290" y="76" width="96" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
         <text x="338" y="95" text-anchor="middle" font-size="11.5">node 1</text>
@@ -487,9 +487,9 @@ node 3: ****Ledger created**** (lcl:158-8ffa2042 state:bd17d692 patch:adf7287e)<
     <h3>Simulator</h3>
     <p>The demo below is one run of <code>npm run demo</code> against the in-process simulator and mock Xahau, which is where settlement and the self-funding loop are exercised.</p>
   </div>
-<pre><code>== Nomad Connector demo ==
+<pre><code>== Everlink demo ==
 cluster: 3 HotPocket nodes, 40 ms rounds
-multisig account rNomadConnectorMultisigAccount1234: 50.000000 XAH, 30 EVR
+multisig account rEverlinkMultisigAccount1234567890: 50.000000 XAH, 30 EVR
 fee 25 bps, ILP prefix g.nomad
 
 Alice rDneppzU9WfK7Y1iPxHwj7PxQxmsgVhBRa opens a 5 XAH payment channel to the connector: CAD4FE62F2BB…
@@ -517,6 +517,7 @@ consensus forks: none across 32 rounds on 3 nodes</code></pre>
     <p>Bob's 0.001001 XAH left at the connector is not a rounding error: his own STREAM rate probes were in flight when the payout was planned, so those drops were held and returned after it. The mock ledger, the DEX price and the lease economics are stand-ins; the packet handling, claim verification, multisig idempotency and vote logic are the real code paths.</p>
     <h3>Evernode mainnet: three hosts, two networks, real XAH</h3>
     <p>The same contract, deployed with <code>evdevkit cluster-create 3 … --signer-count 3 --signer-quorum 0.6 -m 4</code> to <code>evernode4.kimchigraphics.com</code>, <code>zeb-a-nodew-01.xahaud.xyz</code> and <code>evernode12.laurenka.nl</code> (leases 0.000001 EVR per moment each, 4 moments: 0.000012 EVR for the cluster), the tenant account <code>r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC</code> funded with 10 XAH and 1 EVR, consensus rounds of 3 s with the ledger observed every third round. Alice and Bob are ordinary Xahau accounts (8 and 2 XAH) with ephemeral HotPocket identities. This is <code>deploy/testnet/demo-testnet.js</code> on the eighth deployment — the first seven found, in order, an unreachable host, a same-operator pair whose instances could not see each other, and finally a bundling defect that crashed every WebSocket frame to the ledger (§11).</p>
+    <p>The transcript still shows the ILP prefix <code>g.nomad</code>: that is what this cluster was configured with before the project was renamed Everlink; new deployments default to <code>g.everlink</code>.</p>
   </div>
 <pre><code>04:37:57 Alice rLwxGWqbvXKo8n8VfgqHDZ1ijKBNUn63rD (8 XAH), Bob rpjRMytx1WoHraemK1zGXfxkokY1JaPcit (2 XAH), master 9.981223 XAH
 04:37:57 Alice opens a 5 XAH payment channel to the cluster account ...
@@ -570,7 +571,7 @@ consensus forks: none across 32 rounds on 3 nodes</code></pre>
   <ul>
     <li>Multi-asset routing (XRP over XRPL, IOUs), which needs per-asset ledgers and an agreed rate source.</li>
     <li>Multi-hop: letting a peer that is itself a connector announce prefixes, with the hijack problem solved by bonded announcements.</li>
-    <li>Host selection and diversity policy for the Nomad loop, and what a bond or insurance layer for the custodial pool would look like.</li>
+    <li>Host selection and diversity policy for everpocket's Nomad loop, and what a bond or insurance layer for the custodial pool would look like.</li>
     <li>Receipts: STREAM receipts signed by the receiver would let peers audit the connector's fees without trusting it.</li>
   </ul>
 </section>

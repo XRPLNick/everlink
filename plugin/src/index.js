@@ -2,7 +2,7 @@
 
 // ilp-plugin-hotpocket: an ILP "plugin" (the interface ilp-protocol-stream and friends
 // expect: connect/disconnect/isConnected/sendData/registerDataHandler) that talks to a
-// Nomad Connector cluster over the HotPocket user channel.
+// Everlink cluster over the HotPocket user channel.
 //
 // * sendData(prepare)  -> submits {"t":"ilp"} as a contract input and resolves with the
 //                         Fulfill/Reject the contract emits for that id (or a locally

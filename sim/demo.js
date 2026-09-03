@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Narrated demo: a 3-node simulated Nomad Connector cluster, Alice pays Bob with the real
+// Narrated demo: a 3-node simulated Everlink cluster, Alice pays Bob with the real
 // ilp-protocol-stream library, the cluster settles both sides on the mock Xahau ledger,
 // then pays its own hosts in EVR and buys more EVR with its fees.
 //
@@ -24,7 +24,7 @@ async function main() {
   });
   const { cluster, mock, master, config } = sim;
   cluster.on('error', (e) => { console.error('cluster error', e); process.exit(1); });
-  say(`\n== Nomad Connector demo ==`);
+  say(`\n== Everlink demo ==`);
   say(`cluster: ${cluster.nodes.length} HotPocket nodes, ${sim.cluster.roundTimeMs} ms rounds`);
   say(`multisig account ${master}: ${XAH(mock.balance(master))}, ${mock.evr(master)} EVR`);
   say(`fee ${config.feeBps} bps, ILP prefix ${config.ilpAddress}\n`);
