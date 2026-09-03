@@ -79,25 +79,8 @@ if ($addrs.Count -lt 3) { Fail "no-hosts" "fewer than 3 hosts with free slots on
 
 Step "4. connector config for this tenant"
 $cfgPath = Join-Path $dist "nomad.config.json"
-$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
-$cfg.connector.masterAddress = $tenant.address
-$cfg.connector.evrIssuer = $tenant.evrIssuer
-$cfg.xahau.rippleServer = $tenant.server
-$cfg.xahau.network = $net
-$cfg.nomad.preferredHosts = @($addrs | Select-Object -First 12)
-$cfg.nomad.targetNodeCount = if ($env:NOMAD_SIZE) { [int]$env:NOMAD_SIZE } else { 3 }
-if ($net -eq "mainnet") {
-  # Real money: keep 5 XAH untouchable in the account (Xahau reserve is ~2 XAH with the
-  # SignerList, trust line and 3 lease tokens), and keep the EVR reserve tiny so the treasury
-  # never buys EVR on the DEX during the demo (leases on the chosen hosts cost ~0.000001 EVR).
-  $cfg.connector.ilpAddress = "g.nomad"
-  $cfg.connector.reserveDrops = "5000000"
-  $cfg.connector.evrReserve = "0.01"
-  $cfg.connector.evrTopUpXahDrops = "1000000"
-  $cfg.connector.evrTopUpMinEvr = "1"
-}
-$cfg | ConvertTo-Json -Depth 8 | Out-File -Encoding ascii $cfgPath
-Write-Host (Get-Content $cfgPath -Raw)
+node (Join-Path $here "patch-config.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "patch-config.log")
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $cfgPath) -or (Get-Item $cfgPath).Length -lt 100) { Fail "no-config" "could not write contract\dist\nomad.config.json (see out\patch-config.log)" }
 
 if ($stage -eq "demo") {
   Step "6. settlement demo on $net (stage=demo)"

@@ -55,7 +55,7 @@ async function main() {
   for (const h of top) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || '--'}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}  ${h.cpuCores} cores ${h.ramMb} MB`);
   const pick = top.slice(0, 3);
   if (pick.length === 3) say(`3 leases x 4 moments on the top 3 = ${(pick.reduce((s, h) => s + h.leaseEvr, 0) * 4).toFixed(6)} EVR`);
-  fs.writeFileSync(path.join(__dirname, `hosts.${NETWORK}.txt`), free.slice(0, limit).map((h) => h.address).join('\n') + '\n');
+  fs.writeFileSync(path.join(__dirname, `hosts.${NETWORK}.txt`), top.map((h) => h.address).join('\n') + '\n');
   fs.writeFileSync(path.join(__dirname, 'out', 'hosts.json'), JSON.stringify(free, null, 2));
   await reg.disconnect().catch(() => {});
   await api.disconnect().catch(() => {});
