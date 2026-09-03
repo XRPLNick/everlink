@@ -7,9 +7,7 @@ The connector is a [HotPocket](https://docs.evernode.org/) smart contract hosted
 code, the cluster collectively owns a Xahau multisig account (one signer key per node, 80 %
 quorum — the standard everpocket layout), peers pay for what they use through ILP fees, and
 the contract pays for its own hosting by extending its Evernode leases in EVR from that
-account. It is the 2019 forum idea — *"connectors run as decentralised contracts … where no
-one party runs the contract, all parties who use it pay for it as they use it, and it in turn
-pays for its own resource usage"* — built on the platform that now exists for it.
+account.
 
 **Status: ran on Evernode mainnet.** On 3 September 2026 the contract ran on three Evernode
 mainnet hosts (three domains in two countries; the two Dutch hosts turned out to share one IP
