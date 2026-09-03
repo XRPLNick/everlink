@@ -1,0 +1,16 @@
+{
+    "contract": {
+        "consensus": {
+            "mode": "public",
+            "roundtime": 3000
+        },
+        "npl": {
+            "mode": "private"
+        },
+        "round_limits": {
+            "user_input_bytes": 4194304,
+            "user_output_bytes": 4194304,
+            "npl_output_bytes": 4194304
+        }
+    }
+}

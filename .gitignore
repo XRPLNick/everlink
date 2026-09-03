@@ -5,3 +5,6 @@ scratch/
 .DS_Store
 contract/nomad.config.json
 deploy/local/out/
+deploy/testnet/tenant.json
+deploy/testnet/out/
+deploy/testnet/*.keys.json

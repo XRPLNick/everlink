@@ -1,0 +1,25 @@
+# Nomad Connector on Evernode testnet
+
+`run-testnet.cmd` (repo root) → `deploy/testnet/run.ps1`, staged and re-runnable:
+
+1. **tenant.js** – creates a Xahau *testnet* account, funds it from the network faucet, sets an
+   EVR trust line and asks the Evernode foundation for the test EVR gift. Writes `tenant.json`
+   (git-ignored; testnet only). This account is the cluster's multisig **master address**.
+2. **user keys** – `evdevkit keygen` → `user.keys.json` (the tenant's HotPocket user identity).
+3. **hosts** – `evdevkit list` → `hosts.txt` (hosts with free slots, in the order listed).
+4. **config** – patches `contract/dist/nomad.config.json` with the tenant address, EVR issuer,
+   Xahau server and preferred hosts (build the dist first: `npm run build:testnet --workspace contract`).
+5. **cluster-create** – `evdevkit cluster-create 3 … --signer-count 3 --signer-quorum 0.8 -m 4`:
+   acquires 3 instances, generates one signer key per node, sets the SignerList on the tenant
+   account, uploads the contract. Writes `contract/dist/cluster.json`.
+6. **demo-testnet.js** – Alice and Bob get faucet accounts; Alice opens a 5 XAH payment channel
+   to the master account and streams a 3 XAH claim; she pays Bob 1 XAH with `ilp-protocol-stream`
+   through the cluster; the script then watches Xahau for the cluster's multisigned
+   `PaymentChannelClaim` (channel redeemed) and `Payment` (Bob paid out).
+
+Everything is logged under `deploy/testnet/out/`. If a stage fails, the `DONE` file names it
+(`no-tenant`, `no-hosts`, `no-cluster`, …); fix and rerun — completed stages are skipped.
+
+Retiring the tenant's master key after the SignerList is set (so no person controls the
+account) is deliberately **not** automated here: it is irreversible and is a decision for a
+real deployment, not a testnet run.

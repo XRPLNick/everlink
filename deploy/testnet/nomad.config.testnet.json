@@ -1,0 +1,37 @@
+{
+  "connector": {
+    "ilpAddress": "g.nomad.testnet",
+    "assetCode": "XAH",
+    "assetScale": 6,
+    "feeBps": 25,
+    "feeFlat": "0",
+    "minExpiryWindowMs": 8000,
+    "maxPacketAmount": "1000000000",
+    "probeCreditDrops": "10000",
+    "devFaucetDrops": "0",
+    "masterAddress": "<TENANT_ADDRESS>",
+    "redeemThresholdDrops": "1000000",
+    "payoutThresholdDrops": "500000",
+    "minPayoutDrops": "100000",
+    "reserveDrops": "12000000",
+    "baseFeeDrops": "12",
+    "evrIssuer": "<EVR_ISSUER>",
+    "evrReserve": "50",
+    "evrTopUpXahDrops": "2000000",
+    "evrTopUpMinEvr": "1",
+    "minSettleDelaySec": 600
+  },
+  "xahau": {
+    "enabled": true,
+    "network": "testnet",
+    "rippleServer": "<XAHAU_SERVER>",
+    "factsEvery": 3
+  },
+  "nomad": {
+    "targetNodeCount": 3,
+    "lifeIncrMomentMinLimit": 2,
+    "maxLifeMomentLimit": 12,
+    "preferredHosts": [],
+    "instanceCfg": { "config": { "log": { "log_level": "inf" } } }
+  }
+}
