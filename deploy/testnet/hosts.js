@@ -39,10 +39,16 @@ async function main() {
     }))
     // prefer well-reputed, cheap hosts with room
     .sort((a, b) => (b.reputation || 0) - (a.reputation || 0) || a.leaseEvr - b.leaseEvr || b.freeSlots - a.freeSlots);
-  const top = free.slice(0, limit);
-  for (const h of top) {
+  const candidates = free.slice(0, limit * 3);
+  for (const h of candidates) {
     try { h.domain = await new evernode.XrplAccount(h.address, null, { xrplApi: api }).getDomain(); } catch (e) { h.domain = `(domain lookup failed: ${e.message || e})`; }
   }
+  // evdevkit takes the preferred hosts in file order (ties on price keep that order), so spread
+  // the top of the list across operators: one host per registrable domain first, then the rest.
+  const operator = (h) => String(h.domain || h.address).toLowerCase().split('.').slice(-2).join('.');
+  const seenOps = new Set(); const spread = []; const rest = [];
+  for (const h of candidates) { const op = operator(h); if (seenOps.has(op)) rest.push(h); else { seenOps.add(op); spread.push(h); } }
+  const top = spread.concat(rest).slice(0, limit);
   const leases = free.map((h) => h.leaseEvr).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   const median = leases.length ? leases[Math.floor(leases.length / 2)] : 0;
   say(`${free.length} with free slots (lease EVR/moment: min ${leases[0]}, median ${median}, max ${leases[leases.length - 1]}); top ${top.length}:`);
