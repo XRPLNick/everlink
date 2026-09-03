@@ -22,7 +22,7 @@ if (-not (Test-Path (Join-Path $root "node_modules\xrpl"))) { Fail "no-xrpl" "no
 if (-not (Test-Path (Join-Path $dist "index.js"))) { Fail "no-dist" "contract\dist\index.js missing (npm run build:testnet --workspace contract)" }
 if (-not $env:EV_NETWORK) { $env:EV_NETWORK = "testnet" }
 $net = $env:EV_NETWORK
-$stage = if ($env:NOMAD_STAGE) { $env:NOMAD_STAGE } else { "deploy" }   # hosts | keys | status | deploy | demo
+$stage = if ($env:NOMAD_STAGE) { $env:NOMAD_STAGE } else { "deploy" }   # hosts | keys | status | deploy | demo | trace | withdraw
 Write-Host "Evernode network: $net   stage: $stage"
 if ($stage -eq "hosts") {
   Step "hosts with free instance slots ($net) - read-only"
@@ -102,6 +102,13 @@ if ($stage -eq "withdraw") {
   if (-not (Test-Path (Join-Path $dist "cluster.json"))) { Fail "no-cluster" "no contract\dist\cluster.json - deploy first" }
   $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
   node (Join-Path $here "withdraw.js") $(if ($env:NOMAD_PEER) { $env:NOMAD_PEER } else { "alice" }) 2>&1 | Tee-Object -FilePath (Join-Path $out "withdraw.log")
+  Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
+}
+if ($stage -eq "trace") {
+  Step "packet-level ILP/STREAM trace through the cluster on $net (stage=trace)"
+  if (-not (Test-Path (Join-Path $dist "cluster.json"))) { Fail "no-cluster" "no contract\dist\cluster.json - deploy first" }
+  $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
+  node (Join-Path $here "trace-stream.js") $(if ($env:NOMAD_AMOUNT) { $env:NOMAD_AMOUNT } else { "1000000" }) 2>&1 | Tee-Object -FilePath (Join-Path $out "trace.log")
   Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
 }
 if ($stage -eq "demo") {
