@@ -43,6 +43,7 @@ async function probe(node) {
       say(`  rounds recorded: ${rounds.map((r) => `${r.lcl}:${r.totalMs}ms${r.errors.length ? '!' : ''}`).join(' ')}; state rounds ${diag.state && diag.state.rounds}`);
     } else say(`  diag: ${JSON.stringify(diag)}`);
     if (diag && diag.probe) say(`  probe from node: ${Object.entries(diag.probe).map(([k, v]) => `${k} -> ${v}`).join('; ')}`);
+    if (diag && diag.events && diag.events.length) { say(`  last events on the node:`); for (const e of diag.events.slice(-14)) say(`    ${e}`); }
     return { node: node.host, ledger: s2.ledgerSeqNo, advancing: adv, unl: s2.currentUnl, peers: s2.peers, info, diag };
   } finally { await client.close().catch(() => {}); }
 }

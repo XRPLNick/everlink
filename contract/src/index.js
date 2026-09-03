@@ -11,7 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const HotPocket = require('hotpocket-nodejs-contract');
-const { runRound } = require('./round');
+const { runRound, diagMark } = require('./round');
 const { makeConfig } = require('./core/connector');
 
 const CONFIG_FILE = 'nomad.config.json';
@@ -51,7 +51,9 @@ async function main() {
 
   // Per-node diagnostics live next to the signer key, outside the consensus state directory.
   const diagFile = path.join(process.cwd(), '..', 'nomad-diag.json');
+  diagMark(diagFile, `process up (${process.version}), bridge ${bridge ? 'on' : 'off'}, cwd ${process.cwd()}`);
   const contract = async (ctx) => {
+    diagMark(diagFile, `contract called: ${ctx.readonly ? 'readonly' : `consensus lcl ${ctx.lclSeqNo}`}, ${ctx.users.list().length} users`);
     // Watchdog: a round that is still running after this long (a stalled ledger connection,
     // a vote nobody answers) must not block the node forever; give up on it.
     const watchdog = setTimeout(() => { console.error('nomad-connector: round watchdog fired, exiting'); process.exit(2); }, ROUND_WATCHDOG_MS);
@@ -61,12 +63,13 @@ async function main() {
         stateDir: process.cwd(), config, bridge, diagFile,
         logger: (...a) => console.log(new Date().toISOString(), ...a),
       });
-    } finally { clearTimeout(watchdog); }
+    } finally { clearTimeout(watchdog); diagMark(diagFile, `contract returned (${ctx.readonly ? 'readonly' : 'consensus'})`); }
   };
 
   const hpc = new HotPocket.Contract();
   // forceTerminate: everpocket keeps NPL listeners alive; make sure the process exits.
-  await hpc.init(contract, HotPocket.clientProtocols.json, true);
+  const ok = await hpc.init(contract, HotPocket.clientProtocols.json, true);
+  diagMark(diagFile, `hpc.init -> ${ok}`);
 }
 
 main().catch((e) => { console.error('nomad-connector fatal:', e); process.exit(1); });

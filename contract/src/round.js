@@ -37,6 +37,19 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, gate]).finally(() => clearTimeout(timer));
 }
 
+// Append-only progress marks (one line each) so a hung round can be located from another
+// process: {"t":"diag"} returns the tail of this file too.
+function diagMark(file, text) {
+  if (!file) return;
+  try {
+    const f = file.replace(/\.json$/, '') + '-events.log';
+    fs.appendFileSync(f, `${new Date().toISOString()} pid ${process.pid} ${text}\n`);
+  } catch (e) { /* best effort */ }
+}
+function diagEvents(file) {
+  try { return fs.readFileSync(file.replace(/\.json$/, '') + '-events.log', 'utf8').trim().split('\n').slice(-40); } catch (e) { return []; }
+}
+
 function diagLoad(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return { rounds: [] }; }
 }
@@ -101,6 +114,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
           d.now = new Date().toISOString();
           d.state = { rounds: state.rounds, lastLcl: state.lastLcl, peers: Object.keys(state.peers || {}).length, channels: Object.keys(state.channels || {}).length, payouts: Object.keys(state.payouts || {}).length, treasury: state.treasury };
           if (req.probe) d.probe = await probeConnectivity(stateDir);
+          if (diagFile) d.events = diagEvents(diagFile);
           await user.send(JSON.stringify({ t: 'diag', ...d }));
           continue;
         }
@@ -112,14 +126,18 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
 
   const diag = { lcl: ctx.lclSeqNo, ts: ctx.timestamp, startedAt: new Date().toISOString(), phases: {}, errors: [] };
   const clock = () => Date.now();
+  const mark = (text) => diagMark(diagFile, `lcl ${ctx.lclSeqNo} ${text}`);
+  mark('round start');
   let t = clock();
   const { users, inputs } = await collectInputs(ctx, bridge);
+  mark(`inputs collected: ${inputs.length} from ${users.length} users`);
   const connected = new Set(users.map((u) => u.publicKey));
   diag.inputs = inputs.length; diag.connected = connected.size; diag.phases.inputs = clock() - t;
 
   let facts = null;
   if (bridge) {
     t = clock();
+    mark('observe start');
     try { facts = await withTimeout(bridge.observe(ctx, state), observeTimeout, 'observe'); } catch (e) {
       const msg = String(e && e.message ? e.message : e); log('observe failed', msg); diag.errors.push(`observe: ${msg}`);
     }
@@ -127,11 +145,13 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
     diag.facts = facts ? { ledgerIndex: facts.ledgerIndex, masterBalance: facts.masterBalance, evrBalance: facts.evrBalance, channels: (facts.channels || []).length, validated: (facts.validatedTxs || []).length, failed: (facts.failedTxs || []).length } : null;
   }
 
+  mark(`observe done: ${facts ? 'facts' : 'no facts'}`);
   t = clock();
   const rc = processRound(state, config, {
     timestamp: ctx.timestamp, lclSeqNo: ctx.lclSeqNo, connected, inputs, facts,
   });
   diag.phases.core = clock() - t;
+  mark(`core done: ${rc.intents.length} intents, ${rc.outputs.length} outputs`);
   diag.intents = rc.intents.map((i) => `${i.kind || i.tx.TransactionType}:${i.id}`);
 
   if (rc.intents.length && bridge) {
@@ -145,6 +165,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
     rc.applyIntentResults(results);
     diag.phases.submit = clock() - t;
     diag.results = results;
+    mark(`submit done: ${JSON.stringify(results)}`);
   }
 
   for (const { peer, msg } of rc.outputs) {
@@ -155,6 +176,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
   diag.outputs = rc.outputs.length; diag.log = rc.log.slice(-5);
 
   stateStore.save(stateDir, state);
+  mark('outputs sent, state saved');
   if (bridge && bridge.afterRound) {
     t = clock();
     try { await withTimeout(bridge.afterRound(ctx, state), afterTimeout, 'afterRound'); } catch (e) {
@@ -164,6 +186,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
   }
   diag.finishedAt = new Date().toISOString();
   diag.totalMs = Object.values(diag.phases).reduce((a, b) => a + b, 0);
+  mark(`round done in ${diag.totalMs} ms${diag.errors.length ? ' errors: ' + diag.errors.join(' | ') : ''}`);
   if (diagFile) {
     const d = diagLoad(diagFile);
     d.rounds = (d.rounds || []).concat([diag]).slice(-DIAG_KEEP);
@@ -173,4 +196,4 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
   return { state, outputs: rc.outputs, intents: rc.intents };
 }
 
-module.exports = { runRound, collectInputs, probeConnectivity };
+module.exports = { runRound, collectInputs, probeConnectivity, diagMark };
