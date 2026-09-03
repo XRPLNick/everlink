@@ -13,5 +13,12 @@
             "user_output_bytes": 4194304,
             "npl_output_bytes": 4194304
         }
+    },
+    "mesh": {
+        "msg_forwarding": true,
+        "peer_discovery": {
+            "enabled": true,
+            "interval": 30000
+        }
     }
 }

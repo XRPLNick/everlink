@@ -13,8 +13,9 @@ const net = require('net');
 
 const NETWORK = (process.env.EV_NETWORK || 'testnet').toLowerCase();
 const PROBE_MS = 5000;
+const PROBE_PORTS = 40;
 
-// TCP connect classification: 'open' | 'refused' (reachable, nothing listening) | 'timeout' | 'error'.
+// TCP connect: 'open' | 'refused' | 'timeout' | 'error'.
 function tcpProbe(host, port) {
   return new Promise((resolve) => {
     const s = net.connect({ host, port });
@@ -24,10 +25,15 @@ function tcpProbe(host, port) {
     s.on('error', (e) => done(e.code === 'ECONNREFUSED' ? 'refused' : (e.code === 'ETIMEDOUT' ? 'timeout' : 'error')));
   });
 }
+// Sashimono gives instances user ports from 26201 upwards (the slot number keeps counting, so
+// a 3-slot host can hand out 26211). Hosts typically DROP closed ports, so the only positive
+// signal is an open port of some running instance: probe a window of ports and count the
+// open ones. 0 open = unknown (no running instance, or firewalled from the outside).
 async function probe(domain) {
-  if (!domain || /\s|\(/.test(domain)) return { user: 'error', peer: 'error' };
-  const [user, peer] = await Promise.all([tcpProbe(domain, 26201), tcpProbe(domain, 22861)]);
-  return { user, peer };
+  if (!domain || /\s|\(/.test(domain)) return { open: 0, refused: 0, probed: 0 };
+  const ports = Array.from({ length: PROBE_PORTS }, (_, i) => 26201 + i);
+  const res = await Promise.all(ports.map((p) => tcpProbe(domain, p)));
+  return { open: res.filter((r) => r === 'open').length, refused: res.filter((r) => r === 'refused').length, probed: ports.length };
 }
 const tenantFile = path.join(__dirname, `tenant.${(process.env.EV_NETWORK || 'testnet').toLowerCase()}.json`);
 const say = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -58,30 +64,33 @@ async function main() {
     }))
     // prefer well-reputed, cheap hosts with room
     .sort((a, b) => (b.reputation || 0) - (a.reputation || 0) || a.leaseEvr - b.leaseEvr || b.freeSlots - a.freeSlots);
-  const shortlist = free.slice(0, limit * 4);
+  const shortlist = free.slice(0, limit * 6);
   for (const h of shortlist) {
     try { h.domain = await new evernode.XrplAccount(h.address, null, { xrplApi: api }).getDomain(); } catch (e) { h.domain = `(domain lookup failed: ${e.message || e})`; }
   }
-  // Reachability: Sashimono hands instances ports from 26201 (user) / 22861 (peer) upwards. A
-  // TCP connect to the first slot's ports tells a firewalled or NATed host (timeout) from a
-  // reachable one (open, or refused because that slot is empty). A cluster node nobody can
-  // reach never gets its contract, and hosts that can't be reached from the outside cannot
-  // form a mesh with each other either.
-  say(`probing ${shortlist.length} hosts for reachability ...`);
-  await Promise.all(shortlist.map(async (h) => { h.reach = await probe(h.domain); }));
-  const ok = (r) => r === 'open' || r === 'refused';
-  const candidates = shortlist.filter((h) => ok(h.reach.user) && ok(h.reach.peer));
-  say(`${candidates.length} of ${shortlist.length} reachable (user + peer port answer)`);
-  // evdevkit takes the preferred hosts in file order (ties on price keep that order), so spread
-  // the top of the list across operators: one host per registrable domain first, then the rest.
+  // Reachability: a cluster node nobody can reach never gets its contract, and hosts that
+  // cannot be reached from the outside cannot form a mesh with each other either.
+  say(`probing ${shortlist.length} hosts for reachable instance ports (${PROBE_PORTS} ports each) ...`);
+  for (let i = 0; i < shortlist.length; i += 24) {
+    await Promise.all(shortlist.slice(i, i + 24).map(async (h) => { h.reach = await probe(h.domain); }));
+  }
+  const reachable = shortlist.filter((h) => h.reach.open > 0);
+  const unknown = shortlist.filter((h) => h.reach.open === 0);
+  say(`${reachable.length} of ${shortlist.length} have an instance port answering from here; ${unknown.length} unknown (no open port seen)`);
+  // evdevkit takes the preferred hosts in file order (ties on price keep that order): verified
+  // reachable hosts first, spread across operators (one host per registrable domain, then the
+  // rest), then the unknown ones the same way.
   const operator = (h) => String(h.domain || h.address).toLowerCase().split('.').slice(-2).join('.');
-  const seenOps = new Set(); const spread = []; const rest = [];
-  for (const h of candidates) { const op = operator(h); if (seenOps.has(op)) rest.push(h); else { seenOps.add(op); spread.push(h); } }
-  const top = spread.concat(rest).slice(0, limit);
+  const spreadByOperator = (list) => {
+    const seen = new Set(); const first = []; const rest = [];
+    for (const h of list) { const op = operator(h); if (seen.has(op)) rest.push(h); else { seen.add(op); first.push(h); } }
+    return first.concat(rest);
+  };
+  const top = spreadByOperator(reachable).concat(spreadByOperator(unknown)).slice(0, limit);
   const leases = free.map((h) => h.leaseEvr).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   const median = leases.length ? leases[Math.floor(leases.length / 2)] : 0;
   say(`${free.length} with free slots (lease EVR/moment: min ${leases[0]}, median ${median}, max ${leases[leases.length - 1]}); top ${top.length}:`);
-  for (const h of top) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || "--"}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}  ${h.cpuCores} cores ${h.ramMb} MB  ports ${h.reach.user}/${h.reach.peer}`);
+  for (const h of top) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || "--"}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}  ${h.cpuCores} cores ${h.ramMb} MB  open ports ${h.reach.open}/${h.reach.probed}`);
   const pick = top.slice(0, 3);
   if (pick.length === 3) say(`3 leases x 4 moments on the top 3 = ${(pick.reduce((s, h) => s + h.leaseEvr, 0) * 4).toFixed(6)} EVR`);
   fs.writeFileSync(path.join(__dirname, `hosts.${NETWORK}.txt`), top.map((h) => h.address).join('\n') + '\n');
