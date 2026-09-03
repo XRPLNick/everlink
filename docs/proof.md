@@ -98,24 +98,61 @@ signers, submitted the moment the fulfill came back), close
 returned). The connector's own counters, readable from any node, went from `claims 1, fulfills 2,
 prepares 14, rejects 12` to the new totals at the same time.
 
-## While the lease lasts
+## While the lease lasted
 
-The lease runs until about 08:26 UTC on 3 September 2026. Until then anyone can connect to the
+The first cluster's lease ran until 08:26 UTC on 3 September 2026. Until then anyone could connect to the
 nodes themselves — `wss://evernode4.kimchigraphics.com:26231`, `wss://zeb-a-nodew-01.xahaud.xyz:26203`,
 `wss://evernode12.laurenka.nl:26311` — with `hotpocket-js-client` and send `{"t":"info"}`
 (`node deploy/testnet/status.js` does exactly that). At 05:29 UTC all three answered with the
 same contract state: `rounds 592–596`, `stats {"claims":1,"fulfills":2,"prepares":14,"rejects":12}`,
 UNL of the same three public keys, HotPocket ledger 660–665 and advancing.
 
+## Self-funding: the cluster pays its own hosts
+
+The other half of the 2019 sentence — *"it in turn pays for its own resource usage"* — is a
+separate claim, and the first cluster never had to make it: its four-hour lease was bought up
+front, and when the lease ended the hosts burned the lease tokens (the `URITokenBurn`
+transactions at 06:21–08:26 UTC on the account's list) and the cluster was gone.
+
+A second cluster was deployed at 20:19–20:21 UTC the same day to test exactly that, on three
+new hosts under three domains and three networks, with a **two-hour** lease and the contract's
+Nomad settings (`lifeIncrMomentMinLimit` 4) making the first extension due at once. The kit's
+own transactions — three `URITokenBuy` acquisitions, the `SignerListSet` installing the three
+new signer keys (`rhFnyCHVEi8aMtaJeHKrEGKrtCAhW4J3a3`, `rEez18V1inAmFMNCQJJPgDR6zWhayzsZCf`,
+`rLJ3Bf4ZvwuDbnrLZQVaYJ3rwsm1NfSSeB`) and three one-moment extensions — are the ones signed
+by the tenant key, at 20:19–20:21. Then, within four minutes of the nodes starting, the
+cluster extended its own leases:
+
+| UTC | Ledger | Hash | Host | Amount |
+|---|---|---|---|---|
+| 20:24:10 | 25,544,448 | `83CDC6D44E5D925150DE279CDA516D112D5B43936A963B5E8246860457444BF1` | `rfW86DFVRKUCc53pKdWTyGFMTfeYNNERhs` (evernode.kimchigraphics.com) | 0.000017 EVR |
+| 20:25:11 | 25,544,464 | `2A1769AE4D82FD5BD10EDD688ADA3062C92F19BAFBB8E0FCB204EDC8F2562460` | `rLJU57DimMryraUobdL3iiAMhMmHHfCmnf` (zeb-a-nodew-04.xahaud.xyz) | 0.000017 EVR |
+| 20:26:20 | 25,544,481 | `CAE5EF17A8835CD049076FB75CC5F6871D8519683D2AD00F14BC768B905D9E8A` | `rfHECp4mtFnc6Y3jTsknjJocCisCVjtjf9` (xrp-arnie13.sbs.xrp-arnie1.com) | 0.000017 EVR |
+
+Each is a `Payment` of EVR from the cluster account to the host, with Evernode's
+`evnExtendLease` hook parameter (`65766E457874656E644C65617365`) and the node's lease-token
+id, `SigningPubKey` empty and **three `Signers` entries — the three new signer accounts** —
+and a fee of 600 drops, the multisigned price of a hook-triggering transaction. Seventeen
+moments each, chosen at random by everpocket's Nomad loop, so the cluster bought itself about
+nineteen hours of hosting for 0.000051 EVR. Nobody asked for it: the contract decided in its
+housekeeping round (its diagnostics read `nomad lcl 120: 3 nodes [… life 19/19 1133 min
+left …]`), the nodes co-signed it, and one of them submitted it. It will do it again when any
+node comes within two hours of its expiry.
+
+For honesty: the first cluster, whose settings would have extended in its last hour, did not
+— and its diagnostics did not yet record the Nomad phase, so the reason is unknown. The
+second cluster's contract records every housekeeping decision, which is how the lines above
+were read.
+
 ## What this does and does not prove
 
-It proves that a HotPocket contract running on three Evernode hosts on two networks observed
-the ledger, verified an off-ledger payment-channel claim, routed an ILP/STREAM payment, and
-produced valid multisigned Xahau transactions under 2-of-3 consensus, with no operator
-process anywhere and no human signing anything after the cluster was created.
+It proves that a HotPocket contract running on three Evernode hosts observed the ledger,
+verified an off-ledger payment-channel claim, routed an ILP/STREAM payment, produced valid
+multisigned Xahau transactions under 2-of-3 consensus, and — on the second cluster — paid for
+its own hosting from its own account, with no operator process anywhere and no human signing
+anything after the cluster was created.
 
 It does not (yet) prove that nobody *could* intervene: the account's master key is still
 enabled and held by the person who funded it. Disabling it (`AccountSet` with
 `asfDisableMaster`) would make the signer list the only control, at the price of locking the
-account for good once the lease runs out unless the contract pays everything out first.
-The lease itself was 4 hours; the contract did not have to renew it during the run.
+account for good if the cluster ever dies without paying everything out first.

@@ -56,8 +56,8 @@ expiry. The keys are everpocket's own:
 | key | example | meaning |
 |---|---|---|
 | `targetNodeCount` | `3` | Cluster size to maintain (also the number of signers). |
-| `lifeIncrMomentMinLimit` | `2` | Extend a lease when fewer than this many moments remain. |
-| `maxLifeMomentLimit` | `12` | Never extend beyond this many moments ahead. |
+| `lifeIncrMomentMinLimit` | `4` | Extend a node's lease once it is within half this many moments of expiry, by at least this many moments (a random amount up to the node's maximum; 48 when it has none). With a 2-moment initial lease and the value 4, the first extension is due at once — which is how the self-funding loop is exercised. |
+| `maxLifeMomentLimit` | `12` | Maximum life, in moments, for nodes the cluster acquires itself; nodes created by evdevkit carry no maximum. |
 | `preferredHosts` | `["rHost1…", …]` | Host accounts to acquire from, in order; the Evernode kit fills this from `hosts.<network>.txt`. |
 | `instanceCfg` | `{ "config": { "log": { "log_level": "inf" } } }` | HotPocket instance configuration for newly acquired nodes. |
 

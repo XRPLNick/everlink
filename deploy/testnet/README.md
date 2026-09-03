@@ -20,6 +20,7 @@ scripts only ever spend from the tenant account when *you* launch the deploy or 
 | *you* | send **1 EVR** to the tenant once the trust line exists (any amount works; the leases cost microscopic sums) | 1 EVR |
 | `run-mainnet-demo.cmd` | Alice opens a 5 XAH channel to the cluster account, claims 3 XAH, pays Bob 1 XAH over STREAM; the cluster redeems the claim and pays Bob out with multisigned transactions; Alice then asks to close and the cluster closes the channel, returning her unspent 2 XAH | 1 XAH goes Alice -> Bob (fee 0.0025 XAH stays in the cluster account) |
 | `run-mainnet-trace.cmd` | the same payment again (2 XAH channel, 1 XAH claim, 1 XAH over STREAM) with every ILP packet recorded and decoded into `out/stream-trace.txt` / `.json`; Bob is paid out and Alice's channel closed as in the demo | 1 XAH Alice -> Bob (fee 0.0025 XAH) |
+| `run-mainnet-2h.cmd` | `run-mainnet.cmd` with `EVERLINK_MOMENTS=2`: two-hour leases, so that with the config's `lifeIncrMomentMinLimit` 4 the cluster's Nomad loop extends the leases itself right after starting — the self-funding test | lease EVR + whatever the cluster then spends on extensions (0.000017 EVR per host on the run below) |
 | `run-mainnet-status.cmd` | asks every node for its ledger height, UNL, contract counters and diagnostics (`out/status.log`) | nothing (read-only) |
 | `run-mainnet-withdraw.cmd` | a saved demo peer names its payout address and asks for its unspent connector credit back (`EVERLINK_PEER`, default alice) | nothing beyond the cluster's own fee |
 
@@ -102,6 +103,17 @@ What the seven failed deployments before it found, all fixed in this kit:
   per-node round timings, crash traces and a DNS/TCP/TLS/WebSocket/xrpl/evernode probe run in a
   child process; `run-mainnet-status.cmd` prints it.
 * xrpl.js 4 derives an ed25519 key from a seed unless told `ecdsa-secp256k1`.
+
+### Ninth deployment (20:19 UTC): the cluster pays for its own hosting
+
+`run-mainnet-2h.cmd` on three new hosts (`evernode.kimchigraphics.com`, `zeb-a-nodew-04.xahaud.xyz`,
+`xrp-arnie13.sbs.xrp-arnie1.com` — three domains, three networks this time). Two-hour leases; the
+contract's Nomad settings make the first extension due at once. Within four minutes of the nodes
+starting, the cluster multisigned three EVR payments of 0.000017 to its hosts (`evnExtendLease`
+hook parameter, three signers, 600-drop fee) — hashes in `docs/proof.md` — and its diagnostics
+read `nomad lcl 120: 3 nodes [… life 19/19 1133 min left …]`: nineteen hours of hosting bought by
+the contract itself. The bridge now records every Nomad decision (`nomad lcl N: …` and
+`nomad says: …` marks in the diag events), which is what `run-mainnet-status.cmd` shows.
 
 Testnet (`wss://hooks-testnet-v3.xrpl-labs.com`) is blocked at `no-evr`: the foundation's
 `giftBetaEvr` requests are answered by hand. Devnet is not live.

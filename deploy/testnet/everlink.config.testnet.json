@@ -29,7 +29,7 @@
   },
   "nomad": {
     "targetNodeCount": 3,
-    "lifeIncrMomentMinLimit": 2,
+    "lifeIncrMomentMinLimit": 4,
     "maxLifeMomentLimit": 12,
     "preferredHosts": [],
     "instanceCfg": { "config": { "log": { "log_level": "inf" } } }

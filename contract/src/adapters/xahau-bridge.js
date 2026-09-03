@@ -205,7 +205,20 @@ class XahauBridge {
       if (r.nomadContext && !ctx.readonly && ctx.lclSeqNo % this.nomadEvery === 0) {
         // prune / grow / extend — the cluster pays its own hosts from the multisig account.
         // Housekeeping, not per-packet work: every `nomadEvery` rounds is plenty.
-        await r.nomadContext.init();
+        // everpocket reports its decisions ("Extending the node …", "Pruning …") on the
+        // console only; capture them for the diagnostics, together with the cluster's leases.
+        const t0 = Date.now();
+        const cap = captureConsole();
+        try {
+          await r.nomadContext.init();
+          this.log(`nomad lcl ${ctx.lclSeqNo}: ${this._leaseSummary(r)} (${Date.now() - t0} ms)`);
+        } catch (e) {
+          this.log(`nomad lcl ${ctx.lclSeqNo} failed after ${Date.now() - t0} ms: ${String(e && e.message ? e.message : e).slice(0, 300)}`);
+          throw e;
+        } finally {
+          cap.restore();
+          for (const line of cap.lines) this.log(`nomad says: ${line}`);
+        }
       }
     } finally {
       if (r.xrplReady) await r.xrplContext.deinit().catch(() => {});
@@ -215,6 +228,40 @@ class XahauBridge {
       this._rounds.delete(ctx);
     }
   }
+}
+
+// One line per node: life bought, life targeted, minutes until the lease ends; plus the
+// operations everpocket still has queued (extends, acquires, removals).
+XahauBridge.prototype._leaseSummary = function leaseSummary(r) {
+  try {
+    const momentSize = r.evernodeContext.getEvernodeConfig().momentSize;
+    const nodes = r.clusterContext.getClusterNodes();
+    const now = r.hpContext.timestamp;
+    const parts = nodes.map((n) => {
+      const expiry = (n.createdOnTimestamp || 0) + n.lifeMoments * momentSize * 1000;
+      const left = n.createdOnTimestamp ? Math.round((expiry - now) / 60000) : null;
+      return `${String(n.pubkey).slice(0, 10)} life ${n.lifeMoments}/${n.targetLifeMoments}${n.maxLifeMoments ? `/${n.maxLifeMoments}` : ''} ${left === null ? 'no timestamp' : `${left} min left`}${n.isUnl ? '' : ' (not in UNL)'}`;
+    });
+    const ops = r.clusterContext.operationData && r.clusterContext.operationData.operations ? r.clusterContext.operationData.operations.map((o) => o.type).join(',') : '?';
+    const pending = r.clusterContext.getPendingNodes ? r.clusterContext.getPendingNodes().length : 0;
+    return `${nodes.length} nodes [${parts.join('; ')}], queued ops [${ops}], pending acquires ${pending}, moment ${momentSize}s`;
+  } catch (e) { return `summary unavailable: ${String(e && e.message ? e.message : e).slice(0, 120)}`; }
+};
+
+// Temporarily tee console output (everpocket's logger) into a list, stripped of ANSI colour.
+function captureConsole(max = 40) {
+  const util = require('util');
+  const lines = [];
+  const names = ['log', 'info', 'warn', 'error'];
+  const originals = {};
+  for (const n of names) {
+    originals[n] = console[n];
+    console[n] = (...a) => {
+      try { if (lines.length < max) lines.push(util.format(...a).replace(/\x1b\[[0-9;]*m/g, '').replace(/^\d{8} \d\d:\d\d:\d\d: /, '').slice(0, 240)); } catch (e) { /* ignore */ }
+      originals[n](...a);
+    };
+  }
+  return { lines, restore() { for (const n of names) console[n] = originals[n]; } };
 }
 
 function knownHashes(state) {

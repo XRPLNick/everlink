@@ -15,7 +15,10 @@ operators; leases 0.000001 EVR/moment each) and settled a real payment on Xahau 
 paid Bob 1 XAH with the unmodified `ilp-protocol-stream` (24 s at 3-second rounds), and the
 cluster redeemed her channel and paid Bob 0.996499 XAH with transactions signed by its three
 signer keys under consensus (2-of-3), then closed the channel on her request and returned her
-unspent 2 XAH. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
+unspent 2 XAH. A second cluster, deployed the same evening on three new hosts with two-hour
+leases, then extended its own leases without anyone asking — three EVR payments to its hosts
+co-signed by its three nodes — buying itself nineteen more hours of hosting for 0.000051 EVR.
+The deterministic core, the peer plugin, the multi-node simulator and the STREAM
 end-to-end are tested (`npm test`, 20 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
