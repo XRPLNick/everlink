@@ -80,6 +80,10 @@ What the seven failed deployments before it found, all fixed in this kit:
   that cannot reach each other's peer ports: `hosts.js` probes a window of instance ports and
   spreads the list across operators; the HotPocket override sets `threshold` 60 so 2-of-3
   keeps closing ledgers (evdevkit's 0.8 quorum on three signers is 3-of-3; 0.6 is 2-of-3).
+  Spreading by domain alone was not enough: `evernode4.kimchigraphics.com` and
+  `evernode12.laurenka.nl`, two of the three hosts of the successful run, resolve to the same
+  IP (the nodes' own probes show it), so one operator may hold two of the three signer keys.
+  `hosts.js` now also treats hosts in the same /24 as one operator.
 * The one that cost the most time: `ncc` copies prebuilt native add-ons from several packages
   under colliding names, `ws` loaded the wrong one as `bufferutil`, and every WebSocket frame
   to Xahau longer than 48 bytes crashed the node process. From outside that looks like a round

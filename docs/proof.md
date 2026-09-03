@@ -16,8 +16,10 @@ logs; every line can be checked on a public explorer. Times are UTC ledger close
 - Owner objects (25): the EVR trust line, the signer list and 23 Evernode lease URITokens —
   the three leases of this cluster plus the leases of the seven attempts that failed before it
   (see `deploy/testnet/README.md`). That is why the explorer shows 5.98 XAH spendable of 11.98.
-- The account was funded by hand with 10 XAH and 1 EVR; the balance went 9.981223 → 11.984604 XAH
-  during the run (+3 redeemed, −0.996499 paid to Bob, −0.00018 fees).
+- The account was funded by hand with 10 XAH and 1 EVR; the balance went 9.981223 → 11.984544 XAH
+  over the run (+3 redeemed, −0.996499 paid to Bob, −0.00018 in fees for three multisigned
+  transactions at 60 drops each), and the nodes' own ledger facts agree (`status.log`:
+  `facts ledger 25529548 balance 11984544 EVR 0.999905 channels 0`).
 
 ## Transactions of the account, oldest first
 
@@ -43,13 +45,30 @@ Alice's and Bob's accounts tell the same story from the other side: Alice
 ## The hosts
 
 The three hosts are ordinary registered Evernode hosts, chosen for reputation, open ports and
-being run by three different operators. Their registry entries (reputation 252, lease
-0.000001 EVR/moment, version 0.12.1, countries NL / FR / NL) are visible on the community
-Evernode dashboard at <https://xahau.xrplwin.com/evernode> (search the host address).
+distinct registrable domains. Their registry entries (reputation 252, lease 0.000001 EVR/moment,
+version 0.12.1, countries NL / FR / NL) are visible on the community Evernode dashboard at
+<https://xahau.xrplwin.com/evernode> (search the host address).
+
+One honest footnote: `evernode4.kimchigraphics.com` and `evernode12.laurenka.nl` both resolve
+to `188.142.46.148` (the nodes' own connectivity probes in `deploy/testnet/out/status.log`
+show it), so they are at least co-located and may well be one operator with two domains.
+`zeb-a-nodew-01.xahaud.xyz` is `54.37.252.135`, OVH Gravelines, France. With a 2-of-3
+signer list, whoever controls those two Dutch machines could in principle sign for the account
+outside the contract's consensus. The host picker now spreads by resolved /24 network as well
+as by domain (`deploy/testnet/hosts.js`) so the next cluster lands on three networks.
+
+## While the lease lasts
+
+The lease runs until about 08:26 UTC on 3 September 2026. Until then anyone can connect to the
+nodes themselves — `wss://evernode4.kimchigraphics.com:26231`, `wss://zeb-a-nodew-01.xahaud.xyz:26203`,
+`wss://evernode12.laurenka.nl:26311` — with `hotpocket-js-client` and send `{"t":"info"}`
+(`node deploy/testnet/status.js` does exactly that). At 05:29 UTC all three answered with the
+same contract state: `rounds 592–596`, `stats {"claims":1,"fulfills":2,"prepares":14,"rejects":12}`,
+UNL of the same three public keys, HotPocket ledger 660–665 and advancing.
 
 ## What this does and does not prove
 
-It proves that a HotPocket contract running on three independently operated hosts observed
+It proves that a HotPocket contract running on three Evernode hosts on two networks observed
 the ledger, verified an off-ledger payment-channel claim, routed an ILP/STREAM payment, and
 produced valid multisigned Xahau transactions under 2-of-3 consensus, with no operator
 process anywhere and no human signing anything after the cluster was created.

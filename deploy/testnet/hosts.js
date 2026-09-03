@@ -30,10 +30,12 @@ function tcpProbe(host, port) {
 // signal is an open port of some running instance: probe a window of ports and count the
 // open ones. 0 open = unknown (no running instance, or firewalled from the outside).
 async function probe(domain) {
-  if (!domain || /\s|\(/.test(domain)) return { open: 0, refused: 0, probed: 0 };
+  if (!domain || /\s|\(/.test(domain)) return { open: 0, refused: 0, probed: 0, ip: null };
+  let ip = null;
+  try { ip = (await require('dns').promises.lookup(domain, { family: 4 })).address; } catch (e) { /* unresolvable: treated as unknown */ }
   const ports = Array.from({ length: PROBE_PORTS }, (_, i) => 26201 + i);
   const res = await Promise.all(ports.map((p) => tcpProbe(domain, p)));
-  return { open: res.filter((r) => r === 'open').length, refused: res.filter((r) => r === 'refused').length, probed: ports.length };
+  return { open: res.filter((r) => r === 'open').length, refused: res.filter((r) => r === 'refused').length, probed: ports.length, ip };
 }
 const tenantFile = path.join(__dirname, `tenant.${(process.env.EV_NETWORK || 'testnet').toLowerCase()}.json`);
 const say = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -78,19 +80,25 @@ async function main() {
   const unknown = shortlist.filter((h) => h.reach.open === 0);
   say(`${reachable.length} of ${shortlist.length} have an instance port answering from here; ${unknown.length} unknown (no open port seen)`);
   // evdevkit takes the preferred hosts in file order (ties on price keep that order): verified
-  // reachable hosts first, spread across operators (one host per registrable domain, then the
-  // rest), then the unknown ones the same way.
+  // reachable hosts first, spread across operators, then the unknown ones the same way. Two
+  // hosts count as one operator when they share a registrable domain OR a /24 network: on the
+  // 3 September 2026 run two "different" domains resolved to the same IP, which would let one
+  // operator hold 2 of the 3 signer keys.
   const operator = (h) => String(h.domain || h.address).toLowerCase().split('.').slice(-2).join('.');
+  const network = (h) => (h.reach && h.reach.ip) ? h.reach.ip.split('.').slice(0, 3).join('.') : null;
   const spreadByOperator = (list) => {
     const seen = new Set(); const first = []; const rest = [];
-    for (const h of list) { const op = operator(h); if (seen.has(op)) rest.push(h); else { seen.add(op); first.push(h); } }
+    for (const h of list) {
+      const keys = [operator(h), network(h)].filter(Boolean);
+      if (keys.some((k) => seen.has(k))) rest.push(h); else { keys.forEach((k) => seen.add(k)); first.push(h); }
+    }
     return first.concat(rest);
   };
   const top = spreadByOperator(reachable).concat(spreadByOperator(unknown)).slice(0, limit);
   const leases = free.map((h) => h.leaseEvr).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   const median = leases.length ? leases[Math.floor(leases.length / 2)] : 0;
   say(`${free.length} with free slots (lease EVR/moment: min ${leases[0]}, median ${median}, max ${leases[leases.length - 1]}); top ${top.length}:`);
-  for (const h of top) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || "--"}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}  ${h.cpuCores} cores ${h.ramMb} MB  open ports ${h.reach.open}/${h.reach.probed}`);
+  for (const h of top) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || "--"}  ${String(h.reach.ip || '?').padEnd(15)}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}  ${h.cpuCores} cores ${h.ramMb} MB  open ports ${h.reach.open}/${h.reach.probed}`);
   const pick = top.slice(0, 3);
   if (pick.length === 3) say(`3 leases x 4 moments on the top 3 = ${(pick.reduce((s, h) => s + h.leaseEvr, 0) * 4).toFixed(6)} EVR`);
   fs.writeFileSync(path.join(__dirname, `hosts.${NETWORK}.txt`), top.map((h) => h.address).join('\n') + '\n');

@@ -12,7 +12,8 @@ one party runs the contract, all parties who use it pay for it as they use it, a
 pays for its own resource usage"* — built on the platform that now exists for it.
 
 **Status: ran on Evernode mainnet.** On 3 September 2026 the contract ran on three Evernode
-mainnet hosts (three operators, leases 0.000001 EVR/moment each) and settled a real payment on
+mainnet hosts (three domains in two countries; the two Dutch hosts turned out to share one IP
+address, so count it as two independent operators — leases 0.000001 EVR/moment each) and settled a real payment on
 Xahau mainnet: Alice opened a 5 XAH channel to the cluster account, streamed a 3 XAH claim,
 paid Bob 1 XAH with the unmodified `ilp-protocol-stream` (24 s at 3-second rounds), and the
 cluster redeemed her channel and paid Bob 0.996499 XAH with transactions signed by its three
