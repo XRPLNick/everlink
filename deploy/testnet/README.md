@@ -23,3 +23,14 @@ Everything is logged under `deploy/testnet/out/`. If a stage fails, the `DONE` f
 Retiring the tenant's master key after the SignerList is set (so no person controls the
 account) is deliberately **not** automated here: it is irreversible and is a decision for a
 real deployment, not a testnet run.
+
+## Status (3 September 2026)
+
+Stages 1–4 ran against the live Evernode testnet (`wss://hooks-testnet-v3.xrpl-labs.com`,
+network id 21338): the tenant `rDin6EpnMJqJL2HkWyu7F3K47qUseGBTY2` was created and funded with
+1000 XAH by the faucet, the EVR trust line is set, and six active hosts were found (five with
+free slots, leases at 0.000001 EVR/moment). What is missing is **EVR**: the `giftBetaEvr`
+request that Evernode's own test-account generator sends is answered by hand, not by a bot —
+the foundation account shows dozens of unanswered requests and two 500 EVR gifts in the last
+three months. Devnet is not live (its governor has no configuration). The run stops at stage 5
+with `no-evr` until the tenant holds any EVR at all (3 nodes × 4 moments need 0.000012 EVR).
