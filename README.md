@@ -4,15 +4,14 @@ An Interledger connector that nobody runs.
 
 The connector is a [HotPocket](https://docs.evernode.org/) smart contract hosted on
 [Evernode](https://evernode.org/): every node of the cluster executes the same deterministic
-code, the cluster collectively owns a Xahau multisig account (one signer key per node, 80 %
-quorum — the standard everpocket layout), peers pay for what they use through ILP fees, and
-the contract pays for its own hosting by extending its Evernode leases in EVR from that
-account.
+code, the cluster collectively owns a Xahau multisig account (one signer key per node, and a
+quorum of them — 2 of 3 on the mainnet run — has to sign every transaction), peers pay for what
+they use through ILP fees, and the contract pays for its own hosting by extending its Evernode
+leases in EVR from that account.
 
 **Status: ran on Evernode mainnet.** On 3 September 2026 the contract ran on three Evernode
-mainnet hosts (three domains in two countries; the two Dutch hosts turned out to share one IP
-address, so count it as two independent operators — leases 0.000001 EVR/moment each) and settled a real payment on
-Xahau mainnet: Alice opened a 5 XAH channel to the cluster account, streamed a 3 XAH claim,
+mainnet hosts (two networks — the two Dutch hosts share an IP address, so at most two independent
+operators; leases 0.000001 EVR/moment each) and settled a real payment on Xahau mainnet: Alice opened a 5 XAH channel to the cluster account, streamed a 3 XAH claim,
 paid Bob 1 XAH with the unmodified `ilp-protocol-stream` (24 s at 3-second rounds), and the
 cluster redeemed her channel and paid Bob 0.996499 XAH with transactions signed by its three
 signer keys under consensus (2-of-3), then closed the channel on her request and returned her
@@ -30,6 +29,9 @@ npm test                           # core, simulator, plugin + STREAM end-to-end
 npm run demo                       # narrated run: pay, settle, pay the hosts
 ```
 
+**Documentation** for developers connecting a peer — getting started, the peer protocol, the
+plugin API, the money model, configuration, troubleshooting — is in [docs/](docs/README.md).
+
 ## What it does
 
 ```
@@ -37,7 +39,7 @@ npm run demo                       # narrated run: pay, settle, pay the hosts
              │  {"t":"ilp", id, ILP Prepare}                        ▲
              ▼                                                      │ forwarded Prepare
    ┌──────────────────────── HotPocket user channel ─────────────────────────┐
-   │        Everlink — one contract, N nodes, one consensus round     │
+   │          Everlink — one contract, N nodes, one consensus round          │
    │  facts (voted) ─► process inputs ─► sweep expiries ─► plan settlement   │
    │  balances │ pending packets │ channels & claims │ payouts │ treasury    │
    └────────────────────────────┬────────────────────────────────────────────┘
@@ -76,7 +78,7 @@ plugin/              ilp-plugin-hotpocket: the ilp-plugin interface over the Hot
 sim/                 in-process HotPocket simulator + mock Xahau (channels, multisig, DEX, leases)
 test/                unit, simulator, STREAM end-to-end and production-bridge tests
 deploy/              local (hpdevkit) and Evernode (evdevkit) kits; deploy/windows/ has the double-click launchers
-docs/                design document, docs/proof.md and the evidence (explorer screenshots, packet trace)
+docs/                documentation (start at docs/README.md), design document, proof.md and the evidence
 ```
 
 ## Peer protocol (JSON over the HotPocket user channel)

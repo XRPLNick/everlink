@@ -20,9 +20,12 @@ scripts only ever spend from the tenant account when *you* launch the deploy or 
 | *you* | send **1 EVR** to the tenant once the trust line exists (any amount works; the leases cost microscopic sums) | 1 EVR |
 | `run-mainnet-demo.cmd` | Alice opens a 5 XAH channel to the cluster account, claims 3 XAH, pays Bob 1 XAH over STREAM; the cluster redeems the claim and pays Bob out with multisigned transactions; Alice then asks to close and the cluster closes the channel, returning her unspent 2 XAH | 1 XAH goes Alice -> Bob (fee 0.0025 XAH stays in the cluster account) |
 | `run-mainnet-trace.cmd` | the same payment again (2 XAH channel, 1 XAH claim, 1 XAH over STREAM) with every ILP packet recorded and decoded into `out/stream-trace.txt` / `.json`; Bob is paid out and Alice's channel closed as in the demo | 1 XAH Alice -> Bob (fee 0.0025 XAH) |
+| `run-mainnet-status.cmd` | asks every node for its ledger height, UNL, contract counters and diagnostics (`out/status.log`) | nothing (read-only) |
+| `run-mainnet-withdraw.cmd` | a saved demo peer names its payout address and asks for its unspent connector credit back (`EVERLINK_PEER`, default alice) | nothing beyond the cluster's own fee |
 
-After the demo the tenant account holds its 10 XAH + 3 XAH redeemed - 0.9975 XAH paid to Bob;
-the master key still controls it, so you can sweep it whenever you like. Retiring that key
+After the demo the tenant account holds its 10 XAH plus the 3 XAH redeemed minus the ~1 XAH
+paid to Bob and a few drops of fees; the master key still controls it, so you can sweep it
+whenever you like. Retiring that key
 (so no person controls the connector) is deliberately not automated: it is irreversible.
 
 Knobs: `EVERLINK_SIZE` (nodes = signers, default 3), `EVERLINK_MOMENTS` (lease length, default 4 =

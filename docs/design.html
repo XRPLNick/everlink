@@ -161,7 +161,7 @@
 <section class="prose" id="vision">
   <h2><span class="n">§2</span>The vision, and what changed since 2019</h2>
   <blockquote>It seems to me that connectors are necessarily money service businesses, but AML requirements would make running a connector almost impossible. The obvious option (to me at least) is to have connectors run as decentralised contracts on codius or similar where no one party runs the contract, and all parties who use it pay for it as they use it, and it in turn pays for its own resource usage.<cite>codetsunami, “What is the incentive for running a connector?”, Interledger forum, 7 March 2019</cite></blockquote>
-  <p>Three things are different now. Codius is gone and Evernode has taken its place: a HotPocket cluster can own a Xahau account outright, with one signer key per node kept outside consensus state and an 80 %-weight quorum on the account's SignerList, and everpocket's <em>Nomad</em> cluster model lets "the DApp itself completely take control of managing the cluster" — buying, extending and replacing its own leases from that account. That is the second half of the quotation, almost verbatim.</p>
+  <p>Three things are different now. Codius is gone and Evernode has taken its place: a HotPocket cluster can own a Xahau account outright, with one signer key per node kept outside consensus state and a signer quorum on the account's SignerList (2 of 3 on the mainnet cluster), and everpocket's <em>Nomad</em> cluster model lets "the DApp itself completely take control of managing the cluster" — buying, extending and replacing its own leases from that account. That is the second half of the quotation, almost verbatim.</p>
   <p>Interledger went the other way. The network in 2026 is Rafiki and Open Payments: bilateral peering between regulated account-servicing entities, negotiated settlement, shared auth tokens. A compliance team at such an entity has no counterparty to diligence when the other side is a contract. So a decentralised connector serves a different market than the one the forum post imagined: wallets and services on XRPL and Xahau that already settle in crypto and do not need a legal person across the table.</p>
   <p>And the law moved. "No one party runs it" is no longer the test anyone applies; control is. §8 takes that up.</p>
 </section>
@@ -249,7 +249,7 @@
         <text x="830" y="54" text-anchor="middle" font-weight="600">Xahau ledger</text>
         <rect x="738" y="72" width="184" height="60" rx="3" fill="none" stroke="#B06E12" stroke-width="1.3"></rect>
         <text x="830" y="93" text-anchor="middle" font-size="11.5" fill="#B06E12" font-weight="600">multisig account</text>
-        <text x="830" y="110" text-anchor="middle" font-size="10.5" opacity="0.8">1 signer key per node · 80 % quorum</text>
+        <text x="830" y="110" text-anchor="middle" font-size="10.5" opacity="0.8">1 signer key per node · 2-of-3 quorum</text>
         <text x="830" y="123" text-anchor="middle" font-size="10.5" opacity="0.8">holds XAH float + EVR trust line</text>
 
         <rect x="738" y="148" width="184" height="46" rx="3" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
@@ -416,14 +416,14 @@
 
 <section class="prose" id="control">
   <h2><span class="n">§8</span>Control, not decentralisation</h2>
-  <p>"No one party runs the contract" was a fair summary of the 2019 hope. Since then Roman Storm was convicted (August 2025) of conspiracy to operate an unlicensed money-transmitting business over non-custodial software, with a retrial of the deadlocked counts scheduled for October 2026; the government's theory turned on what the developers still controlled and profited from. Going the other way, the Blockchain Regulatory Certainty Act (Lummis/Wyden, January 2026; also §604 of the CLARITY Act, which passed the House in July 2025, cleared Senate Banking in May 2026 and faces a Senate vote this month) would exempt a "non-controlling developer or provider": someone without "the legal right or unilateral ability to control, initiate, or effectuate transactions involving users' digital assets without third-party approval."</p>
+  <p>"No one party runs the contract" was a fair summary of the 2019 hope. Since then Roman Storm was convicted (August 2025) of conspiracy to operate an unlicensed money-transmitting business over non-custodial software, with a retrial of the deadlocked counts scheduled for October 2026; the government's theory turned on what the developers still controlled and profited from. Going the other way, the Blockchain Regulatory Certainty Act (Lummis/Wyden, January 2026; also §604 of the CLARITY Act, which passed the House in July 2025, cleared Senate Banking in May 2026 and faces a Senate floor vote in September 2026) would exempt a "non-controlling developer or provider": someone without "the legal right or unilateral ability to control, initiate, or effectuate transactions involving users' digital assets without third-party approval."</p>
   <p>That definition is a design specification. The table below maps it onto the prototype.</p>
   <div class="tablewrap">
   <table>
     <thead><tr><th>Actor</th><th>Can they move users' funds alone?</th><th>Design property that makes it so</th></tr></thead>
     <tbody>
       <tr><td>developer / deployer</td><td>no, once the tenant key is retired</td><td>No admin message in the protocol, no runtime parameter change, no upgrade path. The tenant account that created the cluster must drop its master key after the SignerList is set — a deployment step, and the biggest residual risk if skipped.</td></tr>
-      <tr><td>one host / one node</td><td>no</td><td>One signer key of weight 1 against an 80 % quorum; the only transactions it sees are ones consensus produced, and it cannot originate one.</td></tr>
+      <tr><td>one host / one node</td><td>no</td><td>One signer key of weight 1 against a multi-signer quorum (2 of 3 on the mainnet cluster); the only transactions it sees are ones consensus produced, and it cannot originate one.</td></tr>
       <tr><td>a quorum of hosts</td><td>yes, by colluding</td><td>This is the custodial risk of §5. Mitigations are economic (small float, early redemption, host diversity), not structural.</td></tr>
       <tr><td>peers</td><td>only their own</td><td>Claims signed by the peer, payouts to the address the peer registered, balances that nobody else can spend.</td></tr>
       <tr><td>liquidity providers (future)</td><td>no</td><td>Any LP design must give LPs withdrawal rights over their share and nothing else, or it reintroduces a controlling party.</td></tr>
@@ -458,7 +458,7 @@
 <section id="evidence">
   <h2><span class="n">§10</span>What the prototype shows</h2>
   <div class="prose">
-    <p>Eighteen tests: twelve on the core (packets, fees, expiry, rejection codes, disconnects, claims, redemptions, payouts, treasury, read requests, malformed input), a three-node simulator run with settlement and lease payments, a deliberate fork, the production bridge driven through a fake everpocket, and an unmodified <code>ilp-protocol-stream</code> payment from Alice to Bob. Then the same contract on a real cluster.</p>
+    <p>Twenty tests: fourteen on the core (packets, fees, expiry, rejection codes, disconnects, claims, redemptions, payouts, treasury, read requests, malformed input), a three-node simulator run with settlement and lease payments, a deliberate fork, the round runner's watchdog and diagnostics, the production bridge driven through a fake everpocket, an unmodified <code>ilp-protocol-stream</code> payment from Alice to Bob, and the packet tracer decoding that payment. Then the same contract on a real cluster.</p>
     <h3>Real cluster: three hpdevkit nodes in Docker Desktop</h3>
     <p>Ledger disabled, a 10 XAH dev faucet per peer, 1 s rounds. Alice's plugin connects to node 1, Bob's to node 2; the payment crosses consensus. This is the transcript of <code>deploy/local/demo-real.js</code> on the fifth run, after two plugin fixes the real nodes forced (HotPocket hands outputs to clients already parsed, and rejects same-millisecond input nonces) and one connector fix (a packet whose next hop disconnects is now rejected T01 instead of holding the sender's funds until expiry).</p>
   </div>

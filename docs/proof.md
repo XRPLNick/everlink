@@ -15,7 +15,7 @@ logs; every line can be checked on a public explorer. Times are UTC ledger close
   nothing; they are only the identities of the keys HotPocket generated on each host.
 - Owner objects (25): the EVR trust line, the signer list and 23 Evernode lease URITokens —
   the three leases of this cluster plus the leases of the seven attempts that failed before it
-  (see `deploy/testnet/README.md`). That is why the explorer shows 5.98 XAH spendable of 11.98.
+  (see `deploy/testnet/README.md`). That is why the explorer showed 5.98 XAH spendable of 11.98 at the time.
 - The account was funded by hand with 10 XAH and 1 EVR; the balance went 9.981223 → 11.984544 XAH
   over the run (+3 redeemed, −0.996499 paid to Bob, −0.00018 in fees for three multisigned
   transactions at 60 drops each), and the nodes' own ledger facts agree (`status.log`:
