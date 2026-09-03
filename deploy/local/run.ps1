@@ -27,12 +27,13 @@ cmd /c "node `"$hpkIndex`" version 2>&1"
 
 Step "deploy contract to a 3-node cluster"
 Set-Location (Join-Path $root "contract")
+$distDir = if ($env:NOMAD_DIST) { $env:NOMAD_DIST } else { "dist" }
 $env:HP_CLUSTER_SIZE = "3"
 $env:HP_DEFAULT_NODE = "0"   # 0 = do not stream node logs after deploy (deploy returns)
 $deployLog = Join-Path $out "deploy.log"
 $names = @(docker ps --format "{{.Names}}" 2>$null | Where-Object { $_ -match "hpdevkit_default_node" })
 # Redeploy whenever the built contract changed (hash of dist\index.js is remembered in out\deployed.sha).
-$distHash = (Get-FileHash -Algorithm SHA256 (Join-Path $root "contract\dist\index.js")).Hash
+$distHash = (Get-FileHash -Algorithm SHA256 (Join-Path $root "contract\$distDir\index.js")).Hash
 $shaFile = Join-Path $out "deployed.sha"
 $deployed = if (Test-Path $shaFile) { (Get-Content $shaFile -Raw).Trim() } else { "" }
 if ($names.Count -ge 3 -and $deployed -eq $distHash -and -not $env:NOMAD_REDEPLOY) {
@@ -40,7 +41,7 @@ if ($names.Count -ge 3 -and $deployed -eq $distHash -and -not $env:NOMAD_REDEPLO
 } else {
   if ($names.Count -ge 3) { Write-Host "contract build changed; redeploying" }
   $distHash | Out-File -NoNewline $shaFile
-  cmd /c "node `"$hpkIndex`" deploy dist > `"$deployLog`" 2>&1"
+  cmd /c "node `"$hpkIndex`" deploy $distDir > `"$deployLog`" 2>&1"
   Get-Content $deployLog -Tail 25 -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch "Pulling|Download|Extracting" }
   $deadline = (Get-Date).AddMinutes(3)
   do {
