@@ -120,8 +120,11 @@ Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `ack`, `err`
 * Single asset (XAH). Multi-asset routing needs per-asset ledgers and a rate source.
 * One channel per peer direction is assumed; channel key rotation is not handled.
 * everpocket's own bookkeeping (`transactions.json`) is written from unvoted ledger queries.
-* A cluster's state ends with its last lease, and with the master key retired nobody can sweep
-  a dead cluster's account: peers' credit needs a payout sweep or a hand-over before expiry.
+* No backstop if the cluster dies. With the master key retired, an account whose cluster stops
+  — all nodes lost inside one lease window, a bug that stalls consensus, or the EVR running out —
+  is locked for good, peers' credit included. The cluster extends its own leases (proven on
+  mainnet) and can replace dead nodes (everpocket Nomad, not yet exercised), but there is no
+  last-will sweep of peers' balances to their payout addresses and no hand-over to a successor.
 * Peers' HotPocket identities are their account at the connector: lose the key, lose the credit.
 
 ## License
