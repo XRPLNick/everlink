@@ -19,8 +19,9 @@ async function main() {
   const server = process.env.EV_XAHAUD_SERVER || (fs.existsSync(tenantFile) ? JSON.parse(fs.readFileSync(tenantFile)).server : null) || evernode.Defaults.values.rippledServer;
   const api = new evernode.XrplApi(server, { autoReconnect: false });
   await api.connect();
-  evernode.Defaults.set({ rippledServer: server, xrplApi: api });
-  const reg = new evernode.RegistryClient({ xrplApi: api });
+  evernode.Defaults.set({ rippledServer: server, xrplApi: api, useCentralizedRegistry: true });
+  // Same construction evdevkit uses: the registry hook client resolved from the governor.
+  const reg = await evernode.HookClientFactory.create(evernode.HookTypes.registry);
   await reg.connect();
   const all = await reg.getActiveHostsFromLedger();
   say(`${all.length} active hosts on ${NETWORK} (${server})`);
