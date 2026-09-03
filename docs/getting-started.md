@@ -11,7 +11,7 @@ Xahau mainnet.
   it is not on npm yet. Either work inside a clone —
 
   ```bash
-  git clone https://github.com/NickFields0101/everlink
+  git clone https://github.com/XRPLNick/everlink
   cd everlink && npm install --ignore-scripts
   ```
 
