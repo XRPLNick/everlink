@@ -71,6 +71,8 @@ $cfg.connector.evrIssuer = $tenant.evrIssuer
 $cfg.xahau.rippleServer = $tenant.server
 $cfg.xahau.network = $net
 $cfg.nomad.preferredHosts = @($addrs | Select-Object -First 12)
+$cfg.nomad.targetNodeCount = if ($env:NOMAD_SIZE) { [int]$env:NOMAD_SIZE } else { 3 }
+if ($net -eq "mainnet") { $cfg.connector.ilpAddress = "g.nomad" }
 $cfg | ConvertTo-Json -Depth 8 | Out-File -Encoding ascii $cfgPath
 Write-Host (Get-Content $cfgPath -Raw)
 
@@ -82,17 +84,27 @@ if ($stage -eq "demo") {
   Stop-Transcript | Out-Null; "finished $(Get-Date -Format o)" | Out-File (Join-Path $out "DONE"); exit 0
 }
 
-Step "5. cluster-create (3 nodes, 3 signers, 80% quorum)"
+$size = if ($env:NOMAD_SIZE) { [int]$env:NOMAD_SIZE } else { 3 }
+$moments = if ($env:NOMAD_MOMENTS) { [int]$env:NOMAD_MOMENTS } else { 4 }
+# evdevkit rounds quorum*signers up: 0.8 on 3 signers is 3-of-3, which lets one dead host freeze
+# the account. Use 2-of-3 for tiny clusters, 80% from 5 nodes on (everpocket's default).
+$quorum = if ($size -le 4) { 0.6 } else { 0.8 }
+Step "5. cluster-create ($size nodes, $size signers, quorum $quorum, $moments moments)"
 node (Join-Path $here "balance.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "balance.log")
 $bal = Get-Content (Join-Path $out "balance.json") -Raw | ConvertFrom-Json
 if ([double]$bal.evr -le 0) {
   node (Join-Path $here "inspect.js") 2>&1 | Tee-Object -FilePath (Join-Path $out "inspect.log")
   Fail "no-evr" "tenant $($tenant.address) has no EVR; leases cannot be bought (see out\balance.log, out\inspect.log)"
 }
+# Hard cap on what cluster-create may spend on leases: evdevkit refuses to start if the estimated
+# cost (cheapest preferred hosts x moments) exceeds it. Default: the tenant's whole EVR balance,
+# override with NOMAD_EVR_LIMIT.
+$evrLimit = if ($env:NOMAD_EVR_LIMIT) { $env:NOMAD_EVR_LIMIT } else { $bal.evr }
+Write-Host "EVR limit for leases: $evrLimit"
 $clusterFile = Join-Path $dist "cluster.json"
 if (-not (Test-Path $clusterFile)) {
   $env:EV_HP_OVERRIDE_CFG_PATH = Join-Path $here "hp.cfg.testnet.override"
-  cmd /c "node `"$evdk`" cluster-create 3 `"$dist`" /usr/bin/node `"$hostsFile`" -a index.js --signer-count 3 --signer-quorum 0.8 -m 4 --no-color > `"$out\cluster-create.log`" 2>&1"
+  cmd /c "node `"$evdk`" cluster-create $size `"$dist`" /usr/bin/node `"$hostsFile`" -a index.js --signer-count $size --signer-quorum $quorum -m $moments -e $evrLimit --no-color > `"$out\cluster-create.log`" 2>&1"
   Get-Content (Join-Path $out "cluster-create.log") -Tail 80
 }
 if (-not (Test-Path $clusterFile)) { Fail "no-cluster" "cluster-create did not produce cluster.json (see out\cluster-create.log)" }

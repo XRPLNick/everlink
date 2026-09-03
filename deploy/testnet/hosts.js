@@ -23,8 +23,12 @@ async function main() {
   // Same construction evdevkit uses: the registry hook client resolved from the governor.
   const reg = await evernode.HookClientFactory.create(evernode.HookTypes.registry);
   await reg.connect();
-  const all = await reg.getActiveHostsFromLedger();
-  say(`${all.length} active hosts on ${NETWORK} (${server})`);
+  // getActiveHostsFromLedger() fetches every host's domain with one account_info per host in
+  // parallel; on mainnet that is thousands of requests against a public server. Decode the hook
+  // states without domains, shortlist, then look up domains for the shortlist only.
+  const everyHost = await reg.getAllHostsFromLedger(false);
+  const all = everyHost.filter((h) => h.active);
+  say(`${everyHost.length} registered hosts on ${NETWORK} (${server}), ${all.length} active`);
   const free = all
     .filter((h) => (h.maxInstances - h.activeInstances) > 0)
     .map((h) => ({
@@ -35,8 +39,16 @@ async function main() {
     }))
     // prefer well-reputed, cheap hosts with room
     .sort((a, b) => (b.reputation || 0) - (a.reputation || 0) || a.leaseEvr - b.leaseEvr || b.freeSlots - a.freeSlots);
-  say(`${free.length} with free slots; top ${Math.min(limit, free.length)}:`);
-  for (const h of free.slice(0, limit)) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || '--'}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}`);
+  const top = free.slice(0, limit);
+  for (const h of top) {
+    try { h.domain = await new evernode.XrplAccount(h.address, null, { xrplApi: api }).getDomain(); } catch (e) { h.domain = `(domain lookup failed: ${e.message || e})`; }
+  }
+  const leases = free.map((h) => h.leaseEvr).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  const median = leases.length ? leases[Math.floor(leases.length / 2)] : 0;
+  say(`${free.length} with free slots (lease EVR/moment: min ${leases[0]}, median ${median}, max ${leases[leases.length - 1]}); top ${top.length}:`);
+  for (const h of top) say(`  ${h.address}  ${String(h.domain).padEnd(28)} ${h.country || '--'}  slots ${h.freeSlots}/${h.totalSlots}  lease ${h.leaseEvr} EVR/moment  rep ${h.reputation}  v${h.version}  ${h.cpuCores} cores ${h.ramMb} MB`);
+  const pick = top.slice(0, 3);
+  if (pick.length === 3) say(`3 leases x 4 moments on the top 3 = ${(pick.reduce((s, h) => s + h.leaseEvr, 0) * 4).toFixed(6)} EVR`);
   fs.writeFileSync(path.join(__dirname, `hosts.${NETWORK}.txt`), free.slice(0, limit).map((h) => h.address).join('\n') + '\n');
   fs.writeFileSync(path.join(__dirname, 'out', 'hosts.json'), JSON.stringify(free, null, 2));
   await reg.disconnect().catch(() => {});
