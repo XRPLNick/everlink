@@ -19,14 +19,33 @@ const { majority } = require('./npl-vote');
 
 const TIMEOUT_MS = 6000;
 const NETWORK_IDS = { mainnet: 21337, testnet: 21338 };
+// evernode-js-client fetches these from GitHub (https.get without a timeout) every time a
+// context is initialised; a host without outbound HTTPS would hang the round. Same content as
+// EvernodeXRPL/evernode-resources definitions/definitions.json.
+const NETWORK_DEFINITIONS = {
+  mainnet: { governorAddress: 'rBvKgF3jSZWdJcwSsmoJspoXLLDVLDp6jg', rippledServer: 'wss://xahau.network', stateIndexId: 'evernodeprod', networkID: 21337 },
+  testnet: { governorAddress: 'rUZXZuqhjRP2ouHTmBncp2pmntt2WmNo9c', rippledServer: 'wss://hooks-testnet-v3.xrpl-labs.com', stateIndexId: 'evernodeindex', networkID: 21338 },
+  devnet: { governorAddress: 'rwBigRmbdi4CwtdS9yV9f7YqaZbzVbnvrt', rippledServer: 'wss://hooks-testnet-v3.xrpl-labs.com', stateIndexId: 'evernodev3devindex', networkID: 21338 },
+};
+function useOfflineDefinitions() {
+  try {
+    const { Defaults } = require('evernode-js-client');
+    if (Defaults.__nomadOffline) return;
+    const original = Defaults.useNetwork.bind(Defaults);
+    Defaults.useNetwork = async (network) => { if (NETWORK_DEFINITIONS[network]) Defaults.set(NETWORK_DEFINITIONS[network]); else await original(network); };
+    Defaults.__nomadOffline = true;
+  } catch (e) { /* tests inject a fake everpocket without evernode-js-client */ }
+}
 // everpocket ClusterMessageType values (models/cluster): messages from cluster nodes, not peers.
 const CLUSTER_MESSAGE_TYPES = new Set(['maturity_ack', 'cluster_nodes']);
 
 class XahauBridge {
-  constructor({ masterAddress, network = 'mainnet', rippleServer = null, evrIssuer, factsEvery = 5, nomad = null, logger = () => {}, evp = null }) {
+  constructor({ masterAddress, network = 'mainnet', rippleServer = null, evrIssuer, factsEvery = 5, nomadEvery = 10, nomad = null, logger = () => {}, evp = null }) {
     if (!masterAddress) throw new Error('masterAddress required');
     // `evp` can be injected (tests); by default the real everpocket library is used.
     this.evp = evp || require('everpocket-nodejs-contract');
+    if (!evp) useOfflineDefinitions();
+    this.nomadEvery = nomadEvery;
     this.master = masterAddress;
     this.network = network;
     this.rippleServer = rippleServer;
@@ -156,8 +175,9 @@ class XahauBridge {
   async afterRound(ctx) {
     const r = this._contexts(ctx);
     try {
-      if (r.nomadContext && !ctx.readonly) {
+      if (r.nomadContext && !ctx.readonly && ctx.lclSeqNo % this.nomadEvery === 0) {
         // prune / grow / extend — the cluster pays its own hosts from the multisig account.
+        // Housekeeping, not per-packet work: every `nomadEvery` rounds is plenty.
         await r.nomadContext.init();
       }
     } finally {

@@ -11,9 +11,38 @@
 //   5. deliver outputs to connected users, persist state
 //
 // A `bridge` is { observe(ctx, state) -> facts|null, submit(ctx, intents) -> results, afterRound?(ctx, state) }.
+//
+// Diagnostics: with `diagFile` set (index.js points it outside the consensus state directory)
+// every round appends its timings, facts summary, intents, results and errors to that per-node
+// file, and the read request {"t":"diag"} returns it, optionally with connectivity probes
+// ({"t":"diag","probe":true}). Per node, never part of consensus.
 
+const fs = require('fs');
+const dns = require('dns');
+const net = require('net');
+const path = require('path');
 const { processRound, handleReadRequest } = require('./core/connector');
 const stateStore = require('./core/state');
+
+// A node that cannot reach the ledger must not hold up the round: observations and the Nomad
+// housekeeping are abandoned after these limits (the core then sees no facts this round).
+// Submissions are never abandoned mid-way (a payout that did go out must not be recorded as failed).
+const OBSERVE_TIMEOUT_MS = 25000;
+const AFTER_TIMEOUT_MS = 30000;
+const DIAG_KEEP = 8;
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const gate = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label}: abandoned after ${ms} ms`)), ms); });
+  return Promise.race([promise, gate]).finally(() => clearTimeout(timer));
+}
+
+function diagLoad(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return { rounds: [] }; }
+}
+function diagSave(file, d) {
+  try { fs.writeFileSync(file, JSON.stringify(d, null, 1)); } catch (e) { /* diagnostics are best effort */ }
+}
 
 async function collectInputs(ctx, bridge = null) {
   const users = ctx.users.list().slice().sort((a, b) => (a.publicKey < b.publicKey ? -1 : a.publicKey > b.publicKey ? 1 : 0));
@@ -29,7 +58,34 @@ async function collectInputs(ctx, bridge = null) {
   return { users, inputs };
 }
 
-async function runRound(ctx, { stateDir, config, bridge = null, logger = null }) {
+// Outbound connectivity as seen from this node (read requests only): name resolution and TCP
+// reachability of the ledger, GitHub (evernode definitions) and the other cluster nodes' peer ports.
+async function probeConnectivity(stateDir, targets = []) {
+  const tcp = (host, port) => new Promise((resolve) => {
+    const t0 = Date.now();
+    const s = net.connect({ host, port });
+    const done = (r) => { try { s.destroy(); } catch (e) { /* ignore */ } resolve(`${r} ${Date.now() - t0}ms`); };
+    s.setTimeout(4000, () => done('timeout'));
+    s.on('connect', () => done('open'));
+    s.on('error', (e) => done(e.code || 'error'));
+  });
+  const list = [['xahau.network', 443], ['raw.githubusercontent.com', 443], ...targets];
+  try {
+    const cluster = JSON.parse(fs.readFileSync(path.join(stateDir, 'cluster.json'), 'utf8'));
+    for (const n of cluster.nodes || []) if (n.domain && n.peerPort) list.push([n.domain, n.peerPort]);
+  } catch (e) { /* no cluster.json (local run) */ }
+  const out = {};
+  await Promise.all(list.map(async ([host, port]) => {
+    let ip = null;
+    try { ip = (await dns.promises.lookup(host)).address; } catch (e) { ip = `dns ${e.code || e.message}`; }
+    out[`${host}:${port}`] = `${ip} ${await tcp(host, port)}`;
+  }));
+  return out;
+}
+
+async function runRound(ctx, { stateDir, config, bridge = null, logger = null, diagFile = null, timeouts = {} }) {
+  const observeTimeout = timeouts.observe || OBSERVE_TIMEOUT_MS;
+  const afterTimeout = timeouts.after || AFTER_TIMEOUT_MS;
   const log = (...a) => logger && logger(...a);
   const state = stateStore.load(stateDir);
 
@@ -38,31 +94,57 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null })
     for (const user of ctx.users.list()) {
       for (const input of user.inputs || []) {
         const raw = await ctx.users.read(input);
+        let req = null;
+        try { req = JSON.parse(raw.toString()); } catch (e) { req = null; }
+        if (req && req.t === 'diag') {
+          const d = diagFile ? diagLoad(diagFile) : { rounds: [] };
+          d.now = new Date().toISOString();
+          d.state = { rounds: state.rounds, lastLcl: state.lastLcl, peers: Object.keys(state.peers || {}).length, channels: Object.keys(state.channels || {}).length, payouts: Object.keys(state.payouts || {}).length, treasury: state.treasury };
+          if (req.probe) d.probe = await probeConnectivity(stateDir);
+          await user.send(JSON.stringify({ t: 'diag', ...d }));
+          continue;
+        }
         await user.send(handleReadRequest(state, config, user.publicKey, raw));
       }
     }
     return { state, outputs: [], intents: [] };
   }
 
+  const diag = { lcl: ctx.lclSeqNo, ts: ctx.timestamp, startedAt: new Date().toISOString(), phases: {}, errors: [] };
+  const clock = () => Date.now();
+  let t = clock();
   const { users, inputs } = await collectInputs(ctx, bridge);
   const connected = new Set(users.map((u) => u.publicKey));
+  diag.inputs = inputs.length; diag.connected = connected.size; diag.phases.inputs = clock() - t;
 
   let facts = null;
   if (bridge) {
-    try { facts = await bridge.observe(ctx, state); } catch (e) { log('observe failed', e && e.message ? e.message : e); }
+    t = clock();
+    try { facts = await withTimeout(bridge.observe(ctx, state), observeTimeout, 'observe'); } catch (e) {
+      const msg = String(e && e.message ? e.message : e); log('observe failed', msg); diag.errors.push(`observe: ${msg}`);
+    }
+    diag.phases.observe = clock() - t;
+    diag.facts = facts ? { ledgerIndex: facts.ledgerIndex, masterBalance: facts.masterBalance, evrBalance: facts.evrBalance, channels: (facts.channels || []).length, validated: (facts.validatedTxs || []).length, failed: (facts.failedTxs || []).length } : null;
   }
 
+  t = clock();
   const rc = processRound(state, config, {
     timestamp: ctx.timestamp, lclSeqNo: ctx.lclSeqNo, connected, inputs, facts,
   });
+  diag.phases.core = clock() - t;
+  diag.intents = rc.intents.map((i) => `${i.kind || i.tx.TransactionType}:${i.id}`);
 
   if (rc.intents.length && bridge) {
+    t = clock();
     let results = [];
     try { results = await bridge.submit(ctx, rc.intents); } catch (e) {
-      log('submit failed', e && e.message ? e.message : e);
-      results = rc.intents.map((i) => ({ id: i.id, ok: false, error: String(e && e.message ? e.message : e) }));
+      const msg = String(e && e.message ? e.message : e);
+      log('submit failed', msg); diag.errors.push(`submit: ${msg}`);
+      results = rc.intents.map((i) => ({ id: i.id, ok: false, error: msg }));
     }
     rc.applyIntentResults(results);
+    diag.phases.submit = clock() - t;
+    diag.results = results;
   }
 
   for (const { peer, msg } of rc.outputs) {
@@ -70,12 +152,25 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null })
     if (user) await user.send(msg); // disconnected peers simply miss the output
   }
   for (const line of rc.log) log(line);
+  diag.outputs = rc.outputs.length; diag.log = rc.log.slice(-5);
 
   stateStore.save(stateDir, state);
   if (bridge && bridge.afterRound) {
-    try { await bridge.afterRound(ctx, state); } catch (e) { log('afterRound failed', e && e.message ? e.message : e); }
+    t = clock();
+    try { await withTimeout(bridge.afterRound(ctx, state), afterTimeout, 'afterRound'); } catch (e) {
+      const msg = String(e && e.message ? e.message : e); log('afterRound failed', msg); diag.errors.push(`afterRound: ${msg}`);
+    }
+    diag.phases.after = clock() - t;
+  }
+  diag.finishedAt = new Date().toISOString();
+  diag.totalMs = Object.values(diag.phases).reduce((a, b) => a + b, 0);
+  if (diagFile) {
+    const d = diagLoad(diagFile);
+    d.rounds = (d.rounds || []).concat([diag]).slice(-DIAG_KEEP);
+    d.last = diag;
+    diagSave(diagFile, d);
   }
   return { state, outputs: rc.outputs, intents: rc.intents };
 }
 
-module.exports = { runRound, collectInputs };
+module.exports = { runRound, collectInputs, probeConnectivity };

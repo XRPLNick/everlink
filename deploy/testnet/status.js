@@ -26,15 +26,24 @@ async function probe(node) {
     const s1 = await withTimeout(client.getStatus(), 8000, 'status');
     await sleep(7000);
     const s2 = await withTimeout(client.getStatus(), 8000, 'status');
-    let info = null;
-    try {
-      const raw = await withTimeout(client.submitContractReadRequest(JSON.stringify({ t: 'info' })), 8000, 'read');
-      info = raw && typeof raw === 'object' && !Buffer.isBuffer(raw) ? raw : JSON.parse(Buffer.from(raw).toString('utf8'));
-    } catch (e) { info = { error: e.message }; }
+    const read = async (req, ms) => {
+      const raw = await withTimeout(client.submitContractReadRequest(JSON.stringify(req)), ms, 'read');
+      return raw && typeof raw === 'object' && !Buffer.isBuffer(raw) ? raw : JSON.parse(Buffer.from(raw).toString('utf8'));
+    };
+    let info = null; let diag = null;
+    try { info = await read({ t: 'info' }, 8000); } catch (e) { info = { error: e.message }; }
+    try { diag = await read({ t: 'diag', probe: true }, 15000); } catch (e) { diag = { error: e.message }; }
     const adv = s2.ledgerSeqNo > s1.ledgerSeqNo;
     say(`${node.domain}:${node.userPort} ${node.host}  connected in ${Date.now() - t0} ms; hp ${s2.hpVersion}; ledger ${s1.ledgerSeqNo} -> ${s2.ledgerSeqNo} after 7 s (${adv ? 'ADVANCING' : 'STUCK'}); vote ${s2.voteStatus}; unl ${s2.currentUnl.length} [${s2.currentUnl.map((u) => String(u).slice(0, 10)).join(' ')}]; peers ${(s2.peers || []).length}`);
     say(`  contract: ${info && info.connectorAddress ? `${info.connectorAddress} master ${info.masterAddress} rounds ${info.rounds} stats ${JSON.stringify(info.stats)}` : JSON.stringify(info)}`);
-    return { node: node.host, ledger: s2.ledgerSeqNo, advancing: adv, unl: s2.currentUnl, peers: s2.peers, info };
+    if (diag && diag.last) {
+      const l = diag.last;
+      say(`  last round lcl ${l.lcl} at ${l.startedAt}: ${l.totalMs} ms (${Object.entries(l.phases).map(([k, v]) => `${k} ${v}`).join(', ')}); inputs ${l.inputs}; facts ${l.facts ? `ledger ${l.facts.ledgerIndex} balance ${l.facts.masterBalance} EVR ${l.facts.evrBalance} channels ${l.facts.channels}` : 'none'}; intents ${JSON.stringify(l.intents)}; errors ${JSON.stringify(l.errors)}`);
+      const rounds = diag.rounds || [];
+      say(`  rounds recorded: ${rounds.map((r) => `${r.lcl}:${r.totalMs}ms${r.errors.length ? '!' : ''}`).join(' ')}; state rounds ${diag.state && diag.state.rounds}`);
+    } else say(`  diag: ${JSON.stringify(diag)}`);
+    if (diag && diag.probe) say(`  probe from node: ${Object.entries(diag.probe).map(([k, v]) => `${k} -> ${v}`).join('; ')}`);
+    return { node: node.host, ledger: s2.ledgerSeqNo, advancing: adv, unl: s2.currentUnl, peers: s2.peers, info, diag };
   } finally { await client.close().catch(() => {}); }
 }
 

@@ -84,7 +84,7 @@ test('XahauBridge drives the core through fake everpocket on a 3-node cluster', 
   const calls = [];
   const config = makeConfig({ masterAddress: MASTER, feeBps: 100, minExpiryWindowMs: 300, redeemThresholdDrops: '1000000', payoutThresholdDrops: '1000000' });
   const bridge = new XahauBridge({
-    masterAddress: MASTER, network: 'testnet', evrIssuer: config.evrIssuer, factsEvery: 1,
+    masterAddress: MASTER, network: 'testnet', evrIssuer: config.evrIssuer, factsEvery: 1, nomadEvery: 1,
     nomad: { targetNodeCount: 3, lifeIncrMomentMinLimit: 2 }, evp: fakeEverpocket(mock, calls),
   });
   const cluster = new SimCluster({ nodeCount: 3, roundTimeMs: 25, handler: (ctx) => runRound(ctx, { stateDir: ctx.sim.stateDir, config, bridge }) });

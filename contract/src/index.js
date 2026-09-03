@@ -15,6 +15,7 @@ const { runRound } = require('./round');
 const { makeConfig } = require('./core/connector');
 
 const CONFIG_FILE = 'nomad.config.json';
+const ROUND_WATCHDOG_MS = 120000;
 
 function loadConfig() {
   // Look next to the binary first (deployed alongside index.js), then in the state dir.
@@ -42,16 +43,25 @@ async function main() {
       rippleServer: file.xahau.rippleServer || null,
       evrIssuer: config.evrIssuer,
       factsEvery: file.xahau.factsEvery || 5,
+      nomadEvery: file.xahau.nomadEvery || 10,
       nomad: file.nomad || null,
       logger: (...a) => console.log(new Date().toISOString(), ...a),
     });
   }
 
+  // Per-node diagnostics live next to the signer key, outside the consensus state directory.
+  const diagFile = path.join(process.cwd(), '..', 'nomad-diag.json');
   const contract = async (ctx) => {
-    await runRound(ctx, {
-      stateDir: process.cwd(), config, bridge,
-      logger: (...a) => console.log(new Date().toISOString(), ...a),
-    });
+    // Watchdog: a round that is still running after this long (a stalled ledger connection,
+    // a vote nobody answers) must not block the node forever; give up on it.
+    const watchdog = setTimeout(() => { console.error('nomad-connector: round watchdog fired, exiting'); process.exit(2); }, ROUND_WATCHDOG_MS);
+    watchdog.unref();
+    try {
+      await runRound(ctx, {
+        stateDir: process.cwd(), config, bridge, diagFile,
+        logger: (...a) => console.log(new Date().toISOString(), ...a),
+      });
+    } finally { clearTimeout(watchdog); }
   };
 
   const hpc = new HotPocket.Contract();
