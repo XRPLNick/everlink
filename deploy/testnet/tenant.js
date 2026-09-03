@@ -99,4 +99,4 @@ async function main() {
   if (evr === '0') { say('WARNING: no EVR received; leases cannot be bought without EVR'); process.exit(2); }
 }
 
-main().then(() => process.exit(0)).catch((e) => { say('FAILED', e && e.stack ? e.stack : e); process.exit(1); });
+if (require.main === module) main().then(() => process.exit(0)).catch((e) => { say("FAILED", e && e.stack ? e.stack : e); process.exit(1); });
