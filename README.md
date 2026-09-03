@@ -20,6 +20,8 @@ signer keys under consensus (2-of-3), then closed the channel on her request and
 unspent 2 XAH. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
 end-to-end are tested (`npm test`, 19 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
+Every mainnet transaction, with hashes and signers, is laid out for independent checking in
+[docs/proof.md](docs/proof.md).
 
 ```
 npm install --ignore-scripts      # blake3 (a hotpocket-js-client dep) tries to download a native build otherwise
