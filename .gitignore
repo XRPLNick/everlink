@@ -4,3 +4,4 @@ scratch/
 *.log
 .DS_Store
 contract/nomad.config.json
+deploy/local/out/
