@@ -36,16 +36,19 @@ Peers can read the values that matter to them with the `info` read request; they
 | `evrReserve` | `"20"` | `"0.01"` | Keep at least this many EVR for lease payments; below it the treasury buys more. |
 | `evrTopUpXahDrops` | `"5000000"` | `"1000000"` | Most XAH to spend per DEX top-up. |
 | `evrTopUpMinEvr` | `"10"` | `"1"` | Least EVR to accept for it (limit price of the immediate-or-cancel offer). |
-| `lastWillSec` *info* | `1800` | `1800` | The [last will](money.md#if-the-cluster-dies-the-last-will): when the signer quorum's hosting is paid for this many seconds or less and has not been extended, stop accepting Prepares and claims, redeem every channel and pay every peer out. Normal operation resumes once a full moment more than this is paid for again. `0` disables. Must stay below the point at which Nomad starts extending — half of `lifeIncrMomentMinLimit` moments before *its* expiry estimate, which can run up to a moment plus the fifteen-minute timestamp slack ahead of the fact's deadline: with `4`, 1 800 s leaves the Nomad loop at least a quarter of an hour of attempts before the last will steps in, usually far more; above 2 700 s the last will could fire before Nomad's first attempt. Keep it at 1 800 s or below. |
+| `lastWillSec` *info* | `1800` | `1800` | The [last will](money.md#if-the-cluster-dies-the-last-will): when the signer quorum's hosting is paid for this many seconds or less and has not been renewed, stop accepting Prepares and claims, redeem every channel and pay every peer out. Normal operation resumes once a full moment more than this is paid for again. `0` disables. Must stay well below `leaseExtendAheadMoments` × moment (7 200 s), the point at which renewals start: 1 800 s gives the renewals an hour and a half of attempts before the last will steps in. |
 | `lastWillMinDrops` | `"1000"` | `"1000"` | Balances below this (0.001 XAH) are left in the account by the last will rather than paid out at a loss to the fee. |
 | `lastWillReserveDrops` | `"3000000"` | `"3000000"` | What the last will keeps back instead of `reserveDrops`: the ledger's own reserve for the account (on Xahau 1 XAH plus 0.2 XAH per owned object — SignerList, EVR trust line, lease tokens). Set it too low and the final payouts fail (`tecUNFUNDED_PAYMENT`, refunded and retried with backoff); too high and that much of the peers' money stays behind. |
-| `lastWillGraceRounds` | `100` | `100` | No wind-down in a cluster's first this-many rounds: a fresh deployment's leases are short by design and the Nomad loop extends them within minutes. |
+| `lastWillGraceRounds` | `100` | `100` | No wind-down in a cluster's first this-many rounds: a fresh deployment's leases are short by design and the first renewals come within minutes. |
+| `leaseExtendAheadMoments` | `2` | `2` | Renew a node's Evernode lease once the lease fact shows this many moments of hosting left for it (on its pessimistic clock). The most urgent node first, one per round. `0` leaves renewals to nobody — the cluster then dies with its leases. |
+| `leaseExtendMoments` | `24` | `24` | Moments (hours) each renewal buys. At 0.000001 EVR per moment on the mainnet hosts, a day costs 0.000024 EVR per node. |
 
 Failed payouts back off: 20 rounds after the first failure, doubling per failure, at most 2 000
-rounds; a `settle_to` with a different address or tag, or a successful payout, resets it. At most
-four transactions are submitted per round, closing channels first. A transaction the cluster
-submitted but cannot find on the ledger is given up after 200 ledgers. None of this is
-configurable.
+rounds; a `settle_to` with a different address or tag, or a successful payout, resets it. A
+failed lease renewal backs off per node: 20 rounds, doubling, at most 200. At most four
+transactions are submitted per round, lease renewals first, then closing channels. A
+transaction the cluster submitted but cannot find on the ledger is given up after 200 ledgers.
+A lease renewal that has not returned after 90 s counts as failed. None of this is configurable.
 
 ## `xahau`
 
@@ -55,19 +58,22 @@ configurable.
 | `network` | `mainnet` | `mainnet` or `testnet` (`devnet` is accepted but has no network id yet): selects the Xahau network id (21337 / 21338) and the built-in ledger definitions. |
 | `rippleServer` | `null` (network default) | WebSocket endpoint the nodes query, e.g. `wss://xahau.network`. |
 | `factsEvery` | `5` | Observe the ledger (balances, channels, EVR line, transaction results, the lease fact) and vote on it every this many rounds; also whenever a settlement is pending. Deployed: 3. |
-| `nomadEvery` | `10` | Run everpocket's Nomad housekeeping every this many rounds. |
+| `nomadEvery` | `10` | Run everpocket's Nomad housekeeping (prune, grow) every this many rounds. |
 | `momentSec` | `3600` | Length of an Evernode moment, used for the lease fact only until the Nomad phase has read the live value (and the moment clock's base) from the Evernode registry. Each node caches that next to its diagnostics file, outside consensus state, votes it with the facts, and the core keeps the agreed value in state (`clock`), which nodes without a cache of their own then use — so every node derives the same fact. |
 
 ## `nomad`
 
-Passed to everpocket's `NomadContext`, which keeps the cluster alive from the master account:
-prunes dead nodes, acquires replacements from `preferredHosts`, extends leases that are near
-expiry. The keys are everpocket's own:
+Passed to everpocket's `NomadContext`, which keeps the cluster's membership from the master
+account: prunes dead nodes and acquires replacements from `preferredHosts`. Its own lease
+renewal is switched off — the contract renews leases itself (`leaseExtendAheadMoments`,
+`leaseExtendMoments` above), because everpocket's renews one node per housekeeping round in
+cluster order and lets one host that will not take the payment block all the others. The keys
+are everpocket's own:
 
 | key | example | meaning |
 |---|---|---|
 | `targetNodeCount` | `3` | Cluster size to maintain (also the number of signers). |
-| `lifeIncrMomentMinLimit` | `4` | Extend a node's lease once it is within half this many moments of expiry, by at least this many moments (a random amount up to the node's maximum; 48 when it has none). With a 2-moment initial lease and the value 4, the first extension is due at once — which is how the self-funding loop is exercised. |
+| `lifeIncrMomentMinLimit` | `4` | Only used for nodes everpocket acquires itself: the least initial life they are bought (a random amount between this and `maxLifeMomentLimit`). Renewals of running nodes no longer depend on it. |
 | `maxLifeMomentLimit` | `12` | Maximum life, in moments, for nodes the cluster acquires itself; nodes created by evdevkit carry no maximum. |
 | `preferredHosts` | `["rHost1…", …]` | Host accounts to acquire from, in order; the Evernode kit fills this from `hosts.<network>.txt`. |
 | `instanceCfg` | `{ "config": { "log": { "log_level": "inf" } } }` | HotPocket instance configuration for newly acquired nodes. |

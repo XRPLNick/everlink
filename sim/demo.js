@@ -20,7 +20,7 @@ const rounds = (cluster, n) => new Promise((resolve) => { let c = 0; const h = (
 async function main() {
   const sim = createSimConnector({
     nodeCount: 3, roundTimeMs: 40,
-    config: { feeBps: 25, minExpiryWindowMs: 1000, redeemThresholdDrops: '2000000', payoutThresholdDrops: '1000000', evrTopUpXahDrops: '2000000', evrTopUpMinEvr: '6' },
+    config: { feeBps: 25, minExpiryWindowMs: 1000, redeemThresholdDrops: '2000000', payoutThresholdDrops: '1000000', evrTopUpXahDrops: '2000000', evrTopUpMinEvr: '6', leaseExtendMoments: 4 },
   });
   const { cluster, mock, master, config } = sim;
   cluster.on('error', (e) => { console.error('cluster error', e); process.exit(1); });

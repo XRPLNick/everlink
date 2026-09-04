@@ -154,12 +154,12 @@ So the contract carries a last will, executed by the cluster itself while it can
    has carried the moment clock, a cruder bound is used (everpocket's estimate less a moment and
    the slack); a record with a signer node whose lease data is missing gives no fact at all,
    and the last known one stands.
-2. The Nomad loop tries to extend a lease half of `lifeIncrMomentMinLimit` moments before *its*
-   estimate of expiry — two moments, as deployed. If the fact still shows **`lastWillSec` or
-   less** (30 minutes by default) — meaning the extension has been failing for at least a
-   quarter of an hour, usually an hour or more — the connector **winds down**, except in a
-   cluster's first `lastWillGraceRounds` (100 rounds, five minutes), when short leases are
-   normal and the loop has not had its first go:
+2. The cluster renews each node's lease itself once the fact shows `leaseExtendAheadMoments`
+   (two) of hosting left for it — see [Keeping the hosts paid](#keeping-the-hosts-paid). If the
+   fact still shows **`lastWillSec` or less** (30 minutes by default) for the signer quorum —
+   meaning the renewals have been failing for an hour and a half — the connector **winds
+   down**, except in a cluster's first `lastWillGraceRounds` (100 rounds, five minutes), when
+   short leases are normal and the first renewals are still to come:
    - new Prepares are rejected with `F02 connector is winding down …`, new claims with
      `claim_ack … reason: connector is winding down` (ILDCP still answers, `settle_to` still works);
    - every channel with claims not yet redeemed is redeemed, whatever the amount;
@@ -195,6 +195,31 @@ Fees accrue in XAH in the connector's account and are the only income of the clu
 account's EVR balance falls under `evrReserve`, and there is free equity (ledger balance minus
 reserve minus everything owed to peers), the treasury places an immediate-or-cancel offer on
 the Xahau DEX to buy EVR with up to `evrTopUpXahDrops` of XAH, asking at least `evrTopUpMinEvr`
-for it; if the book cannot fill it, it waits twenty rounds and tries again. everpocket's Nomad
-loop then spends that EVR on extending the nodes' Evernode leases. On the mainnet run the
-leases cost 0.000012 EVR for four hours, so no DEX purchase was needed.
+for it; if the book cannot fill it, it waits twenty rounds and tries again. That EVR is what
+the lease renewals below are paid with. On the mainnet runs the leases cost millionths of an
+EVR per hour, so no DEX purchase was ever needed.
+
+## Keeping the hosts paid
+
+Every node of the cluster is a leased Evernode instance, paid for in moments (hours) from the
+connector's account, and a lease that is not renewed ends with the instance. The lease fact
+(above) lists every node with the time its hosting is paid until, on the same pessimistic clock
+the last will uses. From that the core plans renewals like any other settlement:
+
+- a node is due once it has `leaseExtendAheadMoments` (two) of hosting left; the one closest
+  to running out goes first, and **one node is renewed per round** — each renewal is a
+  multisigned EVR payment to the host, carried out in the submission phase like a payout,
+  never cut short by the housekeeping phase's time limit;
+- each renewal buys `leaseExtendMoments` (24) more moments;
+- a host that will not take the payment — inactive on the Evernode registry, out of reach,
+  its hook rejecting — is that node's problem alone: the node waits out a backoff of its own
+  (20 rounds, doubling per failure, at most 200 — ten minutes) while the others are renewed
+  on their turn, and a success resets it. `info` shows the bookkeeping as `leases`, and the
+  node's `diag` events (`{"t":"diag","events":500,"filter":"lease"}`) show every attempt;
+- nodes everpocket is still bringing up (their initial life) and nodes at their maximum life
+  are left to everpocket, which also keeps pruning dead nodes and buying replacements.
+
+This replaces everpocket's own renewal loop, which renews one node per housekeeping round in
+cluster order and retries a failing one until it succeeds — so one host that would not take
+the payment held every node behind it in the queue until their leases ran out. That is how the
+second mainnet cluster died (see [proof.md](proof.md#day-two-how-the-second-cluster-died)).

@@ -122,21 +122,37 @@ At 20:43 UTC, with all three nodes answering, `run-mainnet-retire.cmd` disabled 
 that need it (`deploy`, `keys`) are finished for this account, and `demo`, `trace`, `withdraw`
 and `status` never needed it.
 
-### Since then: the last will (not on mainnet)
+### Day two (4 September): the ninth cluster died
 
-The contract now carries a [last will](../../docs/money.md#if-the-cluster-dies-the-last-will):
-when the lease fact shows the signer quorum's hosting ending within `lastWillSec` (30 minutes)
-without the Nomad loop having extended it, the cluster stops taking money, redeems every claim
-and pays every peer out while it can still sign. The mainnet cluster runs the code from before
-this existed and has no upgrade path, so it will never have it. Putting the last will on mainnet
-means a **new tenant account** (the old one's master key is gone, so it cannot buy leases for a
-new cluster) and a fresh `run-mainnet.cmd` / `run-mainnet-2h.cmd` deployment; proving it there
-means letting that cluster run out of EVR on purpose and watching it pay its peers back before
-its leases end. `run-mainnet-status.cmd` prints the hosting deadline of any cluster built from
-this code. Two things to check on the first deployment of this code: that the first redemption
-and payout — every transaction now carries an `everlink/intent` memo — are accepted at the usual
-60-drop multisig fee (a `telINSUF_FEE_P` in the diagnostics would mean `baseFeeDrops` needs
-raising), and that the status output shows a hosting deadline rather than a `leaseNote`.
+At 13:22 UTC it renewed one node's lease with nobody watching (`DDE117FB…`, 0.000022 EVR, three
+signers); it never renewed the other two, and at 15:20 UTC their hosts burned the lease tokens
+and reclaimed the instances. `run-mainnet-status.cmd` at 15:30 reached one node of three, ledger
+stuck at 11265, facts vote 1/3. With two signer keys gone the account is frozen for good (11.98
+XAH, 1 EVR, no peers). The full account is in [docs/proof.md](../../docs/proof.md#day-two-how-the-second-cluster-died).
+The cause is not on record — the diagnostics kept a minute of history — and two mechanisms fit:
+everpocket's serial renewal queue blocked by a host its tenant client would not pay ("Host is
+not active."), and the contract's 30-second cap on the housekeeping phase.
+
+### Since then: the last will and the contract's own renewals (not on mainnet)
+
+The contract now carries a [last will](../../docs/money.md#if-the-cluster-dies-the-last-will)
+— when the lease fact shows the signer quorum's hosting ending within `lastWillSec` (30 minutes)
+unrenewed, the cluster stops taking money, redeems every claim and pays every peer out while it
+can still sign — and [renews its own leases](../../docs/money.md#keeping-the-hosts-paid): most
+urgent node first, one per round, per-node backoff, in the submission phase that no timeout cuts
+short; everpocket's Nomad keeps prune and grow only. `{"t":"diag","events":500,"filter":"lease"}`
+returns a node's whole renewal history, and `run-mainnet-status.cmd` prints each node's lease and
+renewal bookkeeping.
+
+The dead cluster ran the code from before any of this existed and had no upgrade path. Putting
+it on mainnet means a **new tenant account** (the old one's master key is gone, so it cannot buy
+leases for a new cluster) and a fresh `run-mainnet.cmd` / `run-mainnet-2h.cmd` deployment. The
+order that this run taught: let the new cluster renew all its nodes unattended at least twice
+(two days) before `run-mainnet-retire.cmd`, and let it live a week alone before inviting a peer.
+Two things to check on its first day: that the first redemption, payout and renewal — every
+transaction now carries an `everlink/intent` memo — are accepted at the usual multisig fee (a
+`telINSUF_FEE_P` in the diagnostics would mean `baseFeeDrops` needs raising), and that the status
+output shows a hosting deadline per node rather than a `leaseNote`.
 
 Testnet (`wss://hooks-testnet-v3.xrpl-labs.com`) is blocked at `no-evr`: the foundation's
 `giftBetaEvr` requests are answered by hand. Devnet is not live.

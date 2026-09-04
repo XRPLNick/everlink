@@ -10,7 +10,7 @@
 //   4. bridge.submit(): multisign & submit the intents (everpocket votes on the result)
 //   5. deliver outputs to connected users, persist state
 //
-// A `bridge` is { observe(ctx, state, { stateDir }) -> facts|null, submit(ctx, intents) -> results, afterRound?(ctx, state) }.
+// A `bridge` is { observe(ctx, state, { stateDir }) -> facts|null, submit(ctx, intents, { stateDir }) -> results, afterRound?(ctx, state) }.
 //
 // Diagnostics: with `diagFile` set (index.js points it outside the consensus state directory)
 // every round appends its timings, facts summary, intents, results and errors to that per-node
@@ -31,8 +31,13 @@ const stateStore = require('./core/state');
 // (index.js's watchdog, HotPocket's execution limit) leaves the planned payouts on record for the
 // bridge to reconcile against the ledger by their memos.
 const OBSERVE_TIMEOUT_MS = 25000;
-const AFTER_TIMEOUT_MS = 30000;
+// The housekeeping phase (everpocket's prune/grow: a node acquisition is a multisign election
+// of its own) may take a while; lease renewals no longer run in it (they are intents, submitted
+// with the rest and never cut off by this).
+const AFTER_TIMEOUT_MS = 90000;
 const DIAG_KEEP = 8;
+const DIAG_EVENTS_DEFAULT = 60;
+const DIAG_EVENTS_MAX = 2000;
 
 function withTimeout(promise, ms, label) {
   let timer;
@@ -49,17 +54,34 @@ function eventFiles(file) {
   const base = file.replace(/\.json$/, '') + '-events.log';
   return [base, path.join(require('os').tmpdir(), 'everlink-diag-events.log')];
 }
+// The events log is the node's history of record now (a renewal's whole story is in it), and
+// it is append-only: past this size the current file becomes `.1` (one generation kept) so the
+// disk is never the thing that kills a node. Checked every hundred marks, not every mark.
+const DIAG_EVENTS_ROTATE_BYTES = 20 * 1024 * 1024;
+let diagMarks = 0;
 function diagMark(file, text) {
   if (!file) return;
   const line = `${new Date().toISOString()} pid ${process.pid} ${text}\n`;
-  for (const f of eventFiles(file)) { try { fs.appendFileSync(f, line); } catch (e) { /* best effort */ } }
-}
-function diagEvents(file) {
-  const seen = new Set(); const out = [];
+  const rotate = (++diagMarks % 100) === 0;
   for (const f of eventFiles(file)) {
-    try { for (const l of fs.readFileSync(f, 'utf8').trim().split('\n')) if (l && !seen.has(l)) { seen.add(l); out.push(l); } } catch (e) { /* absent */ }
+    try {
+      if (rotate) { const st = fs.statSync(f); if (st.size > DIAG_EVENTS_ROTATE_BYTES) fs.renameSync(f, `${f}.1`); }
+    } catch (e) { /* no file yet */ }
+    try { fs.appendFileSync(f, line); } catch (e) { /* best effort */ }
   }
-  return out.sort().slice(-60);
+}
+// The last `count` event lines, optionally only those containing one of the `filter` words
+// ("|"-separated, case-insensitive, plain text — not a pattern, so a read request cannot make
+// the node spin): {"t":"diag","events":500,"filter":"lease|nomad"} reads a day of housekeeping.
+function diagEvents(file, count = DIAG_EVENTS_DEFAULT, filter = null) {
+  const seen = new Set(); const out = [];
+  const words = filter ? String(filter).slice(0, 200).toLowerCase().split('|').map((w) => w.trim()).filter(Boolean) : [];
+  const wanted = (l) => !words.length || words.some((w) => l.toLowerCase().includes(w));
+  for (const f of eventFiles(file).flatMap((x) => [`${x}.1`, x])) {
+    try { for (const l of fs.readFileSync(f, 'utf8').trim().split('\n')) if (l && !seen.has(l) && wanted(l)) { seen.add(l); out.push(l); } } catch (e) { /* absent */ }
+  }
+  const n = Math.max(1, Math.min(DIAG_EVENTS_MAX, Number(count) || DIAG_EVENTS_DEFAULT));
+  return out.sort().slice(-n);
 }
 
 function diagLoad(file) {
@@ -176,7 +198,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
           if (req.probe) d.probe = await probeConnectivity(stateDir);
           if (req.layers && bridge) d.layers = await probeLayers(bridge.rippleServer || 'wss://xahau.network', bridge.master).catch((e) => ({ error: String(e && e.message ? e.message : e) }));
           if (req.ledger && bridge && bridge.probeLedger) d.ledger = await bridge.probeLedger().catch((e) => ({ error: String(e && e.message ? e.message : e) }));
-          if (diagFile) d.events = diagEvents(diagFile);
+          if (diagFile) d.events = diagEvents(diagFile, req.events, req.filter);
           d.process = { node: process.version, pid: process.pid, rssMb: Math.round(process.memoryUsage().rss / 1048576), uptimeS: Math.round(process.uptime()), cwd: process.cwd(), uid: typeof process.getuid === 'function' ? process.getuid() : null };
           try { d.dirs = { state: fs.readdirSync(stateDir).slice(0, 40), parent: fs.readdirSync(path.join(stateDir, '..')).slice(0, 40), tmp: fs.readdirSync(require('os').tmpdir()).filter((f) => f.startsWith('nomad')) }; } catch (e) { d.dirs = { error: e.message }; }
           try { const patch = JSON.parse(fs.readFileSync(fs.existsSync(path.join(stateDir, '..', 'patch.cfg')) ? path.join(stateDir, '..', 'patch.cfg') : path.join(stateDir, 'patch.cfg'), 'utf8')); d.patch = { consensus: patch.consensus, round_limits: patch.round_limits, npl: patch.npl, unl: (patch.unl || []).length, version: patch.version }; } catch (e) { d.patch = null; }
@@ -228,7 +250,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
     mark('state saved before submit');
     t = clock();
     let results = [];
-    try { results = await bridge.submit(ctx, rc.intents); } catch (e) {
+    try { results = await bridge.submit(ctx, rc.intents, { stateDir }); } catch (e) {
       const msg = String(e && e.message ? e.message : e);
       log('submit failed', msg); diag.errors.push(`submit: ${msg}`);
       results = rc.intents.map((i) => ({ id: i.id, ok: false, error: msg }));

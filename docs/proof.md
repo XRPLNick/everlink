@@ -136,13 +136,12 @@ and a fee of 600 drops, the multisigned price of a hook-triggering transaction. 
 moments each, chosen at random by everpocket's Nomad loop, so the cluster bought itself about
 nineteen hours of hosting for 0.000051 EVR. Nobody asked for it: the contract decided in its
 housekeeping round (its diagnostics read `nomad lcl 120: 3 nodes [… life 19/19 1133 min
-left …]`), the nodes co-signed it, and one of them submitted it. It will do it again when any
-node comes within two hours of its expiry.
+left …]`), the nodes co-signed it, and one of them submitted it.
 
 For honesty: the first cluster, whose settings would have extended in its last hour, did not
 — and its diagnostics did not yet record the Nomad phase, so the reason is unknown. The
 second cluster's contract records every housekeeping decision, which is how the lines above
-were read.
+were read. What it did on its second day is below.
 
 ## The key is gone
 
@@ -165,15 +164,55 @@ account are the connector's float now; nobody can sweep them.
 ledger is exactly the running cluster's and at least a quorum of its nodes answers — with the
 key gone, a dead cluster would mean a dead account.
 
+## Day two: how the second cluster died
+
+The nineteen hours ran out on 4 September. Nobody was watching, which was the point, and the
+account's transaction list tells what happened:
+
+| UTC | Ledger | Hash | What it is |
+|---|---|---|---|
+| 13:22:00 | 25,561,397 | `DDE117FB44B2AE46D422CC64ABDC3D252F7FAC095E1594900636067E5BC65709` | `Payment` of 0.000022 EVR to `rfW86DFVRKUCc53pKdWTyGFMTfeYNNERhs` (evernode.kimchigraphics.com), `evnExtendLease` for that node's token, **three signers** — 22 more moments for node 1, with no one asking |
+| 15:20 | | `5B0FC2DD27BA0548C7761A9022471EA38F3B336566C3DD699DBFC38A51B4B327` | `URITokenBurn` by `rLJU57DimMryraUobdL3iiAMhMmHHfCmnf` (zeb-a-nodew-04.xahaud.xyz): node 2's lease ended, the host reclaimed the instance |
+| 15:20 | | `A55939FBF98747B9A4B335C040C16CD0F10A94F428409C3D614E8177BBEDBB32` | `URITokenBurn` by `rfHECp4mtFnc6Y3jTsknjJocCisCVjtjf9` (xrp-arnie13.sbs.xrp-arnie1.com): node 3's lease ended likewise |
+
+So the cluster renewed one node unattended, on schedule, and never renewed the other two.
+At 15:20 UTC, when their nineteen moments ran out, their hosts destroyed them — and with them
+two of the three signer keys. The status check at 15:30 reached node 1 alone: its last
+consensus round was 11265 at 15:20:40, its facts vote that round got one answer out of three,
+and its ledger has not advanced since. One node of three can neither close ledgers nor sign
+(quorum 2), so `r4bFvWNoA8WNhxiN4Ki6yZvvZreH3Y8NwC` is frozen for good with 11.98 XAH and 1 EVR
+in it. Nobody's money: the account had no peers, no channels and no balances, only the float
+that was sunk the day the key was retired. Node 1's own renewed lease runs out on 5 September.
+
+Why the other two were not renewed is **not on record**, and that is a defect of this
+project's own making: the node keeps only its last sixty diagnostic lines, which by 15:30
+covered one minute, and the ledger shows one renewal and then silence. Two mechanisms fit the
+facts, neither proven. everpocket's Nomad loop renews one node per housekeeping round, in
+cluster order, and retries a failing one until it succeeds, so a renewal that kept failing
+for node 2 — its tenant client refuses to prepare a payment to a host the Evernode registry
+lists as inactive ("Host is not active."), and a host can be inactive on the registry while
+its instances run on — would have held node 3 behind it until both were gone. And the
+contract cut its housekeeping phase off after thirty seconds, while a renewal is a multisign
+election of up to four ten-second votes plus the tenant client's own ledger queries, so a slow
+one may have been abandoned every time it was tried.
+
+Both are gone from the code that came after (the contract now renews each node itself, most
+urgent first, one per round, backing off per node, in the submission phase that nothing cuts
+short, and keeps its housekeeping history), but that code never ran on this cluster, which
+had no upgrade path by design. What this day proves is narrower than the day before: a
+cluster renewed one of its leases with nobody watching, and a cluster that fails to renew the
+others dies exactly as the design says it will, account and all.
+
 ## What this does and does not prove
 
 It proves that a HotPocket contract running on three Evernode hosts observed the ledger,
 verified an off-ledger payment-channel claim, routed an ILP/STREAM payment, produced valid
 multisigned Xahau transactions under 2-of-3 consensus, paid for its own hosting from its own
-account, and that no person can now sign for that account: no operator process anywhere, no
-human signing anything after the cluster was created, and no key left that could.
+account — four times, the last of them with no one watching — and that no person could sign
+for that account after 20:43 UTC on 3 September: no operator process anywhere, no human
+signing anything after the cluster was created, and no key left that could.
 
 What it does not prove is that the hosts cannot collude: two of the three could, in
 principle, sign outside consensus. That is the custodial risk the design note's §5 and §9
-describe, and why the float is pocket money. And a cluster that dies takes its state and its
-account with it: there is no longer anyone who could sweep it.
+describe, and why the float is pocket money. And it does not prove that a cluster keeps
+itself alive: this one did not, and took its account with it, as the section above records.

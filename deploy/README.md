@@ -63,8 +63,9 @@ account **is** the connector's `masterAddress`; `patch-config.js` writes it into
 After the cluster is up: fund the account with XAH (≥ `reserveDrops` + a working float) and
 give it an EVR trust line and some EVR (hosts are paid in EVR); peers connect to any node's
 user port with `ilp-plugin-hotpocket`, open a payment channel *to* the account and stream
-claims. With `nomad` configured, the cluster extends its own leases and replaces dead nodes
-from the account (everpocket `NomadContext`). Retiring the tenant's master key
+claims. With `nomad` configured, the cluster renews its own leases (the contract's own loop:
+most urgent node first, one per round, per-node backoff) and replaces dead nodes from the
+account (everpocket `NomadContext`). Retiring the tenant's master key
 (`AccountSet asfDisableMaster`, `run-mainnet-retire.cmd`) once the SignerList is in place and
 the cluster is keeping itself alive is what makes the cluster the only signer; it is a
 separate launcher a person runs on purpose, because it is irreversible.

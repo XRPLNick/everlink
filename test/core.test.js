@@ -437,6 +437,95 @@ test('last will details: intents capped per round, only the ledger reserve kept,
   assert.ok(lostPeer.pendingPayout && lostPeer.pendingPayout !== lost);
 });
 
+test('lease renewals: most urgent node first, one per round, per-node backoff, nomad-pending and maxed nodes left alone', () => {
+  const cfg = makeConfig({ masterAddress: 'rMaster', leaseExtendAheadMoments: 2, leaseExtendMoments: 24, evrReserve: '0' });
+  const s = initialState();
+  const M = 3600_000;
+  const node = (id, hoursLeft, extra = {}) => ({ id, expiresAt: T0 + hoursLeft * M, signer: true, nomadPending: false, maxReached: false, ...extra });
+  const facts = (nodes) => ({ ledgerIndex: 1, masterBalance: '50000000', evrBalance: '5', channels: [], channelsComplete: true, lease: { deadlineMs: T0 + 10 * M, quorum: 2, signers: 3, momentMs: M, nodes } });
+  const run = (lcl, nodes, results) => {
+    const rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: lcl, connected: new Set(), inputs: [], facts: nodes ? facts(nodes) : null });
+    if (results) rc.applyIntentResults(results(rc));
+    return rc;
+  };
+  // Five nodes: B (1 h) and A (1.5 h) are due, C (5 h) is not, D is being brought up by everpocket, E is at its maximum.
+  const nodes = [node('edA', 1.5), node('edB', 1), node('edC', 5), node('edD', 0.5, { nomadPending: true }), node('edE', 0.5, { maxReached: true })];
+  let rc = run(1, nodes);
+  assert.equal(rc.intents.length, 1, 'one renewal per round');
+  assert.deepEqual(rc.intents[0], { id: rc.intents[0].id, kind: 'extend', node: 'edB', moments: 24 }, 'the most urgent renewable node');
+  assert.equal(s.leases.edB.pending, rc.intents[0].id);
+  // Its host will not take the payment: B backs off, A gets its turn next round.
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: false, resultCode: 'tecHOOK_REJECTED' }]);
+  assert.deepEqual([s.leases.edB.pending, s.leases.edB.attempts, s.leases.edB.backoffUntilLcl], [null, 1, 1 + 20]);
+  rc = run(2, nodes);
+  assert.equal(rc.intents[0].node, 'edA');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HA' }]);
+  assert.deepEqual([s.leases.edA.attempts, s.leases.edA.extendedLcl, s.leases.edA.lastHash], [0, 2, 'HA']);
+  // A's renewal shows in the next fact; B is backing off; nothing else is due.
+  rc = run(3, [node('edA', 25.5), ...nodes.slice(1)]);
+  assert.equal(rc.intents.length, 0);
+  // B is tried again after its backoff, fails again, backs off twice as long; then succeeds and resets.
+  rc = run(21, [node('edA', 25.5), ...nodes.slice(1)]);
+  assert.equal(rc.intents.length, 1);
+  assert.equal(rc.intents[0].node, 'edB');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: false, error: 'Host is not active.' }]);
+  assert.deepEqual([s.leases.edB.attempts, s.leases.edB.backoffUntilLcl], [2, 21 + 40]);
+  rc = run(61, [node('edA', 25.5), ...nodes.slice(1)]);
+  assert.equal(rc.intents[0].node, 'edB');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HB' }]);
+  assert.deepEqual([s.leases.edB.attempts, s.leases.edB.backoffUntilLcl, s.leases.edB.extendedLcl], [0, 0, 61]);
+  // A node that leaves the cluster takes its bookkeeping with it; renewals can be switched off.
+  rc = run(62, [node('edA', 25.5), node('edB', 25)]);
+  assert.deepEqual(Object.keys(s.leases).sort(), ['edA', 'edB']);
+
+  // A renewal whose round died before reporting back (still "pending" two rounds later) is
+  // written off with a backoff and tried again — never left pending for good.
+  rc = run(100, [node('edA', 1)]);
+  assert.equal(rc.intents.length, 1);
+  assert.ok(s.leases.edA.pending);
+  rc = run(101, [node('edA', 1)]);
+  assert.equal(rc.intents.length, 0, 'the same round would have reported; one round later is too soon to tell');
+  rc = run(102, [node('edA', 1)]);
+  assert.deepEqual([s.leases.edA.pending, s.leases.edA.attempts, s.leases.edA.backoffUntilLcl], [null, 1, 122]);
+  assert.ok(rc.log.some((l) => l.includes('never reported back')));
+  // After a success the fact lags the ledger by an observation: the node is not renewed again
+  // while the fact still shows the expiry it was renewed against — unless that goes on for 100 rounds.
+  rc = run(122, [node('edA', 1)]);
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HA2' }]);
+  rc = run(123, [node('edA', 1)]);
+  assert.equal(rc.intents.length, 0, 'fact not caught up yet');
+  rc = run(125, [node('edA', 25)]);
+  assert.equal(rc.intents.length, 0, 'caught up: not due');
+  rc = run(200, [node('edA', 1)]);
+  assert.equal(rc.intents.length, 0, 'due again, but renewed 78 rounds ago and the fact has not moved: wait');
+  rc = run(223, [node('edA', 1)]);
+  assert.equal(rc.intents.length, 1, 'still not moved after 100 rounds: buy again rather than let it lapse');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HA3' }]);
+  // The amount bought respects a node's maximum life and the EVR on hand (evrBalance 5, then
+  // 1 EVR spent since the last observation reported it).
+  rc = run(300, [node('edM', 1, { life: 20, maxLife: 24 })]);
+  assert.equal(rc.intents[0].moments, 4, 'up to the maximum');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HM' }]);
+  const priced = [node('edP', 1, { leaseAmount: 2 }), node('edR', 1, { leaseAmount: 2 }), node('edQ', 1.2, { leaseAmount: 0.5 })];
+  rc = run(301, priced);
+  assert.deepEqual([rc.intents[0].node, rc.intents[0].moments], ['edP', 2], 'floor(5 EVR / 2 per moment)');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HP' }]);
+  assert.equal(s.treasury.evrSpentSinceFact, 4);
+  rc = run(302, null); // no observation this round: the spent EVR is remembered
+  assert.deepEqual([rc.intents[0].node, rc.intents[0].moments], ['edQ', 2], 'R cannot be afforded; the 1 EVR left buys Q two half-EVR moments');
+  assert.ok(rc.log.some((l) => l.includes('cannot afford a moment for edR')));
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HQ' }]);
+  rc = run(303, null);
+  assert.equal(rc.intents.length, 0, 'nothing left to pay with');
+  rc = run(304, priced); // a fresh observation resets the spent counter
+  assert.equal(s.treasury.evrSpentSinceFact, 0);
+  assert.deepEqual([rc.intents[0].node, rc.intents[0].moments], ['edR', 2]);
+  const off = makeConfig({ masterAddress: 'rMaster', leaseExtendAheadMoments: 0, evrReserve: '0' });
+  rc = processRound(s, off, { timestamp: T0, lclSeqNo: 63, connected: new Set(), inputs: [], facts: facts([node('edA', 0.5)]) });
+  assert.equal(rc.intents.length, 0);
+  assert.deepEqual(handleReadRequest(s, cfg, H.PEER_A, JSON.stringify({ t: 'info' })).leases, s.leases);
+});
+
 test('a packet whose next hop disconnects is rejected T01 and refunded, unless it was fulfilled that round', () => {
   const { s } = fundedState({ a: 1_000_000 });
   const dest = H.peerAddress(CFG, H.PEER_B);

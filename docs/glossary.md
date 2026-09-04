@@ -62,10 +62,11 @@ could not be extended: stop taking Prepares and claims, redeem every channel, pa
 balance to its payout address or back to the account that funded its channel — while the nodes
 can still sign. Driven by the lease fact; see [money.md](money.md#if-the-cluster-dies-the-last-will).
 
-**Lease fact** — Part of every ledger observation: the consensus time at which the signer
-quorum's Evernode leases are no longer paid for, computed from everpocket's cluster record, the
-account's SignerList and Evernode's moment clock, and voted on like every other fact. Shown as
-`lease` in the `info` read request.
+**Lease fact** — Part of every ledger observation: every node with the time its Evernode lease
+is paid until, and the consensus time at which the signer quorum's hosting runs out, computed
+from everpocket's cluster record, the account's SignerList and Evernode's moment clock, and
+voted on like every other fact. The core renews leases from it (most urgent node first, one per
+round) and runs its last will on it. Shown as `lease` in the `info` read request.
 
 **Master account / cluster account** — The Xahau account the cluster controls through its
 SignerList: destination of peers' channels, source of payouts and lease payments. `masterAddress`
@@ -75,9 +76,9 @@ in the configuration and in the `info` read request.
 are counted in whole moments from the one the instance was created in; the moment clock's base
 and length come from the Evernode registry.
 
-**Nomad** — everpocket's self-managing cluster model: the contract itself extends leases,
-replaces failed nodes and adds new signers from the master account. The `nomad` configuration
-section is its settings.
+**Nomad** — everpocket's self-managing cluster model: the contract itself replaces failed
+nodes and adds new signers from the master account. Everlink uses it for that, but renews
+leases itself (see *Lease fact*); the `nomad` configuration section is its settings.
 
 **NPL (node party line)** — HotPocket's node-to-node message channel within a round, used by the
 cluster to vote on facts and to collect signatures for multisigned transactions.

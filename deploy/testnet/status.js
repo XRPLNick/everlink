@@ -33,12 +33,19 @@ async function probe(node) {
     let info = null; let diag = null;
     try { info = await read({ t: 'info' }, 8000); } catch (e) { info = { error: e.message }; }
     try { diag = await read({ t: 'diag', probe: true, layers: true }, 60000); } catch (e) { diag = { error: e.message }; }
+    let leaseLog = null;
+    try { leaseLog = await read({ t: 'diag', events: 40, filter: 'lease|nomad' }, 30000); } catch (e) { leaseLog = null; }
     const adv = s2.ledgerSeqNo > s1.ledgerSeqNo;
     say(`${node.domain}:${node.userPort} ${node.host}  connected in ${Date.now() - t0} ms; hp ${s2.hpVersion}; ledger ${s1.ledgerSeqNo} -> ${s2.ledgerSeqNo} after 7 s (${adv ? 'ADVANCING' : 'STUCK'}); vote ${s2.voteStatus}; unl ${s2.currentUnl.length} [${s2.currentUnl.map((u) => String(u).slice(0, 10)).join(' ')}]; peers ${(s2.peers || []).length}`);
     say(`  contract: ${info && info.connectorAddress ? `${info.connectorAddress} master ${info.masterAddress} rounds ${info.rounds} stats ${JSON.stringify(info.stats)}` : JSON.stringify(info)}`);
     // Contracts built since the last will exists report their hosting deadline; older ones have no `lease` field.
-    if (info && info.lease) say(`  hosting: quorum ${info.lease.quorum} of ${info.lease.signers} paid until ${new Date(info.lease.deadlineMs).toISOString()} (${Math.round((info.lease.deadlineMs - Date.now()) / 60000)} min)${info.winding ? ` WINDING DOWN since lcl ${info.lastWill.sinceLcl}` : ''}${info.leaseNote ? ` [${info.leaseNote}]` : ''}`);
-    else if (info && info.leaseNote) say(`  hosting: no lease fact (${info.leaseNote})`);
+    if (info && info.lease) {
+      say(`  hosting: quorum ${info.lease.quorum} of ${info.lease.signers} paid until ${new Date(info.lease.deadlineMs).toISOString()} (${Math.round((info.lease.deadlineMs - Date.now()) / 60000)} min)${info.winding ? ` WINDING DOWN since lcl ${info.lastWill.sinceLcl}` : ''}${info.leaseNote ? ` [${info.leaseNote}]` : ''}`);
+      for (const n of info.lease.nodes || []) {
+        const l = (info.leases || {})[n.id] || {};
+        say(`    ${n.id.slice(0, 10)} paid until ${new Date(n.expiresAt).toISOString()} (${Math.round((n.expiresAt - Date.now()) / 60000)} min)${n.signer ? '' : ' not a signer'}${n.nomadPending ? ' (everpocket buying its initial life)' : ''}${l.pending ? ` renewal ${l.pending} in flight` : ''}${l.attempts ? ` ${l.attempts} failed attempt(s), next at lcl ${l.backoffUntilLcl}` : ''}${l.extendedLcl ? ` last renewed lcl ${l.extendedLcl}` : ''}`);
+      }
+    } else if (info && info.leaseNote) say(`  hosting: no lease fact (${info.leaseNote})`);
     if (diag && diag.last) {
       const l = diag.last;
       say(`  last round lcl ${l.lcl} at ${l.startedAt}: ${l.totalMs} ms (${Object.entries(l.phases).map(([k, v]) => `${k} ${v}`).join(', ')}); inputs ${l.inputs}; facts ${l.facts ? `ledger ${l.facts.ledgerIndex} balance ${l.facts.masterBalance} EVR ${l.facts.evrBalance} channels ${l.facts.channels}` : 'none'}; intents ${JSON.stringify(l.intents)}; errors ${JSON.stringify(l.errors)}`);
@@ -51,6 +58,7 @@ async function probe(node) {
     if (diag && diag.process) say(`  process: ${JSON.stringify(diag.process)}; dirs ${JSON.stringify(diag.dirs)}`);
     if (diag && diag.patch) say(`  patch.cfg: ${JSON.stringify(diag.patch)}; process ${JSON.stringify(diag.process)}`);
     if (diag && diag.events && diag.events.length) { say(`  last events on the node:`); for (const e of diag.events.slice(-24)) say(`    ${e}`); }
+    if (leaseLog && leaseLog.events && leaseLog.events.length) { say(`  last lease/housekeeping events on the node:`); for (const e of leaseLog.events.slice(-40)) say(`    ${e}`); }
     return { node: node.host, ledger: s2.ledgerSeqNo, advancing: adv, unl: s2.currentUnl, peers: s2.peers, info, diag };
   } finally { await client.close().catch(() => {}); }
 }

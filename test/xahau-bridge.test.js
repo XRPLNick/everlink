@@ -25,10 +25,22 @@ const BASE_IDX = Math.floor(Date.now() / 1000) - 3000; // we are 3000 s into the
 const SIGNERS = ['rSignerA111111111111111111111111111', 'rSignerB111111111111111111111111111', 'rSignerC111111111111111111111111111'];
 const SIGNER_LIST = { LedgerEntryType: 'SignerList', SignerQuorum: 2, SignerEntries: SIGNERS.map((a) => ({ SignerEntry: { Account: a, SignerWeight: 1 } })) };
 
-// everpocket's cluster.json as evdevkit writes it, one signer node per cluster node.
+// everpocket's cluster.json as evdevkit writes it, one signer node per cluster node. The lease
+// token id (`name`) is the node's own public key here, so the fake extend flow can find its lease.
 function writeClusterJson(cluster, lifeMoments, createdOnTimestamp = Date.now()) {
-  const nodes = cluster.nodes.map((n, i) => ({ pubkey: n.publicKey, signerAddress: SIGNERS[i], isUnl: true, isQuorum: true, lifeMoments, targetLifeMoments: lifeMoments, maxLifeMoments: 0, createdOnTimestamp, host: `rHost${i}`, owner: 0, status: { status: 1, onLcl: 0 } }));
+  const nodes = cluster.nodes.map((n, i) => ({ pubkey: n.publicKey, signerAddress: SIGNERS[i], isUnl: true, isQuorum: true, lifeMoments, targetLifeMoments: lifeMoments, maxLifeMoments: 0, createdOnTimestamp, host: `rHost${i}`, name: n.publicKey, owner: 0, status: { status: 1, onLcl: 0 } }));
   for (const n of cluster.nodes) fs.writeFileSync(path.join(n.stateDir, 'cluster.json'), JSON.stringify({ initialized: true, nodes, pendingNodes: [] }));
+}
+// everpocket's ClusterManager, as far as the bridge uses it: the cluster record in the node's
+// state directory, updated in memory and persisted on request.
+function fakeClusterManager(stateDir) {
+  const file = path.join(stateDir, 'cluster.json');
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  let updated = false;
+  return {
+    increaseLifeMoments(pubkey, inc) { const n = data.nodes.find((x) => x.pubkey === pubkey); if (n) { n.lifeMoments += inc; updated = true; } },
+    persist() { if (updated) { fs.writeFileSync(file, JSON.stringify(data)); updated = false; } },
+  };
 }
 
 function fakeEverpocket(mock, calls, forgotten = new Set()) {
@@ -112,10 +124,23 @@ function fakeEverpocket(mock, calls, forgotten = new Set()) {
   class EvernodeContext {
     constructor(x) { this.xrplContext = x; }
     getEvernodeConfig() { return { momentSize: MOMENT, momentBaseInfo: { baseIdx: BASE_IDX, baseTransitionMoment: 0 } }; }
+    // everpocket's extend flow: the EVR payment to the host, multisigned; one submission per
+    // round across the nodes (the mock dedupes), the result voted so every node sees the same.
+    async extendSubmit(hostAddress, moments, tokenID) {
+      calls.push(`extend:${tokenID.slice(0, 6)}`);
+      const r = mock.extendLease(MASTER, tokenID, moments, `extend:${tokenID}:${this.xrplContext.hpContext.lclSeqNo}`);
+      const votes = await this.xrplContext.voteContext.vote(`extend${this.xrplContext.voteContext.getUniqueNumber()}`, [r], new AllVoteElector(this.xrplContext.hpContext.getContractUnl().length, 50));
+      return votes[0].data;
+    }
     async deinit() { calls.push('evernode.deinit'); }
   }
-  class ClusterContext { constructor(e) { this.evernodeContext = e; } async init() {} async deinit() { calls.push('cluster.deinit'); } async feedUserMessage(user, raw) { calls.push(`cluster.msg:${JSON.parse(raw.toString()).type}`); await user.send(JSON.stringify({ type: 'maturity_ack', status: 'ok' })); } }
-  class NomadContext { constructor(c, o) { this.clusterContext = c; this.options = o; } async init() { calls.push('nomad.init'); } async deinit() { calls.push('nomad.deinit'); } }
+  class ClusterContext {
+    constructor(e) { this.evernodeContext = e; this.clusterManager = fakeClusterManager(e.xrplContext.hpContext.ctx.sim.stateDir); }
+    async init() {}
+    async deinit() { calls.push('cluster.deinit'); this.clusterManager.persist(); }
+    async feedUserMessage(user, raw) { calls.push(`cluster.msg:${JSON.parse(raw.toString()).type}`); await user.send(JSON.stringify({ type: 'maturity_ack', status: 'ok' })); }
+  }
+  class NomadContext { constructor(c, o) { this.clusterContext = c; this.options = o; } async init() { calls.push('nomad.init'); await this.extend(); } async extend() { calls.push('nomad.extend'); } async deinit() { calls.push('nomad.deinit'); } }
   return { VoteContext, AllVoteElector, HotPocketContext, XrplContext, EvernodeContext, ClusterContext, NomadContext };
 }
 
@@ -133,6 +158,7 @@ test('XahauBridge drives the core through fake everpocket on a 3-node cluster', 
   t.after(() => cluster.stop());
   cluster.on('error', (e) => { throw e; });
   writeClusterJson(cluster, 5); // three signer nodes, five moments of hosting each
+  for (const [i, n] of cluster.nodes.entries()) mock.addLease(n.publicKey, { host: `rHost${i}`, expiresAt: Date.now() + 5 * MOMENT * 1000, evrPerMoment: 0.000001 });
 
   const alice = new SimClient(cluster, edKeys()); const bob = new SimClient(cluster, edKeys());
   await alice.connect(); await bob.connect();
@@ -186,20 +212,40 @@ test('XahauBridge drives the core through fake everpocket on a 3-node cluster', 
   assert.equal(state.treasury.lease.deadlineMs, (BASE_IDX + 5 * MOMENT) * 1000);
   assert.equal(state.lastWill, null);
 
+  assert.ok(!calls.includes('nomad.extend'), "everpocket's own lease renewal is switched off; the core renews");
+  assert.equal(state.treasury.lease.nodes.length, 3);
+  assert.deepEqual(state.leases, {}, 'nothing due yet');
+
   // everpocket's record now says one moment of hosting: ten minutes left on the moment clock.
-  // The last will fires on the next observation and Alice's unspent 1 XAH goes back to the
-  // account her channel came from — she never named a payout address.
+  // Two things happen on the next observation: the last will fires (Alice's unspent 1 XAH goes
+  // back to the account her channel came from — she never named a payout address), and the
+  // core starts renewing the leases, one node per round, through everpocket's extend flow —
+  // which updates the cluster record. Two renewals later the signer quorum is safe for a day
+  // and the wind-down is over.
   writeClusterJson(cluster, 1);
   await cluster.runRound();
   state = stateStore.load(cluster.nodes[0].stateDir);
   assert.equal(state.treasury.lease.deadlineMs, (BASE_IDX + MOMENT) * 1000);
   assert.ok(state.lastWill, 'winding down');
   assert.ok(aOut.some((m) => m.t === 'last_will' && m.active && m.payoutTo === aliceX.address && m.payoutSource === 'channel'), JSON.stringify(aOut.filter((m) => m.t === 'last_will')));
+  const first = [...cluster.nodes].map((n) => n.publicKey).sort()[0];
+  assert.equal(calls.filter((c) => c.startsWith('extend:')).length, 3, 'one renewal, attempted by every node');
+  assert.ok(state.leases[first] && state.leases[first].extendedLcl > 0, `the lowest key (equal expiries) went first: ${JSON.stringify(state.leases)}`);
+  for (const n of cluster.nodes) {
+    const rec = JSON.parse(fs.readFileSync(path.join(n.stateDir, 'cluster.json'), 'utf8')).nodes.find((x) => x.pubkey === first);
+    assert.equal(rec.lifeMoments, 25, 'the cluster record knows, on every node');
+  }
   mock.close();
   await cluster.runRound();
   await cluster.runRound();
   assert.equal(mock.balance(aliceX.address), 20_000_000n - 5_000_000n + 1_000_000n, 'alice refunded by the last will');
   assert.ok(aOut.some((m) => m.t === 'payout' && m.status === 'validated' && m.lastWill === true));
+  await cluster.runRound();
+  state = stateStore.load(cluster.nodes[0].stateDir);
+  assert.equal(Object.values(state.leases).filter((l) => l.extendedLcl > 0).length, 3, `all three renewed: ${JSON.stringify(state.leases)}`);
+  assert.ok(state.treasury.lease.deadlineMs > Date.now() + 20 * 3600_000, 'a day of hosting again');
+  assert.equal(state.lastWill, null, 'the wind-down is over');
+  assert.ok(aOut.some((m) => m.t === 'last_will' && m.active === false));
   assert.equal(cluster.forked, false);
 
   // A round that died between submitting and recording. Rewrite every node's state as the

@@ -136,6 +136,14 @@ recovery without the key.
 
 ## For operators
 
+**Is the cluster renewing its own leases?** `run-mainnet-status.cmd` prints, per node, until
+when its hosting is paid and the renewal bookkeeping (attempts, backoff). The node's own
+history of every renewal is in its diagnostics: the read request
+`{"t":"diag","events":500,"filter":"lease|nomad"}` returns the last 500 matching event lines
+(default 60 lines, all events; at most 2 000). A host that keeps refusing shows as `renewal
+failed: Host is not active.` (the Evernode registry has it inactive) or `renewal rejected:
+tec…`; the other nodes are renewed regardless.
+
 The contract keeps per-node diagnostics outside consensus state and answers a read request
 `{"t":"diag","probe":true,"layers":true}` with the last rounds' timings and phases, crash
 traces, a DNS/TCP/TLS/WebSocket/xrpl/evernode connectivity probe run in a child process, the

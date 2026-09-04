@@ -9,12 +9,17 @@
 //              and the majority view becomes this round's facts for the deterministic core.
 //   submit()   every intent is multisigned by the signer nodes and submitted; everpocket
 //              already runs its own NPL elections so all nodes learn the same result.
-//   afterRound() the Nomad context keeps the cluster alive: prune dead nodes, grow back to
-//              the target size, extend expiring leases — paid from the same multisig account.
+//   afterRound() the Nomad context keeps the cluster's membership: prune dead nodes, grow back
+//              to the target size — paid from the same multisig account. Lease renewal is NOT
+//              left to it: everpocket renews one node per housekeeping round in cluster order
+//              and retries a failing one until it succeeds, so one host that will not take the
+//              payment starves every node behind it (that is how the second mainnet cluster
+//              died). The core decides renewals from the lease fact instead — most urgent node
+//              first, backoff per node — as "extend" intents that submit() carries out.
 //
-// The observation also carries the "lease" fact: until when the cluster's own hosting is paid
-// for, computed from everpocket's cluster.json (consensus state), the account's SignerList and
-// Evernode's moment clock. The core's last will (see connector.js) is driven by it.
+// The observation also carries the "lease" fact: until when each node's hosting is paid for,
+// computed from everpocket's cluster.json (consensus state), the account's SignerList and
+// Evernode's moment clock. The core's renewals and its last will (see connector.js) run on it.
 //
 // Nothing here is deterministic on its own; that is why every observation goes through a
 // vote before it is allowed to touch state, and why the core never calls this module.
@@ -31,6 +36,9 @@ const EVERNODE_CACHE_FILE = 'everlink-evernode.json';
 // the instance first answered); evdevkit stamps the operator's clock after the acquire response.
 // The lease fact assumes the purchase was no longer ago than this before the stamp.
 const LEASE_TIMESTAMP_SLACK_SEC = 900;
+// A lease renewal is a full multisign election plus the tenant client's own ledger queries; the
+// round waits this long for it before calling it failed (the core then backs off and retries).
+const EXTEND_TIMEOUT_MS = 90000;
 // A payout planned by a round that never recorded its submission is looked for on the ledger; it
 // is given up as never submitted once this many ledgers have closed since the ledger the planning
 // round had last observed (everpocket sets LastLedgerSequence 30-40 ledgers past submission, and
@@ -94,7 +102,7 @@ class XahauBridge {
     if (this.nomadOptions) {
       evernodeContext = new evp.EvernodeContext(xrplContext);
       clusterContext = new evp.ClusterContext(evernodeContext);
-      nomadContext = new evp.NomadContext(clusterContext, this.nomadOptions);
+      nomadContext = new (this._nomadClass())(clusterContext, this.nomadOptions);
     }
     const round = { ctx, voteContext, hpContext, xrplContext, evernodeContext, clusterContext, nomadContext, xrplReady: false };
     this._rounds.set(ctx, round);
@@ -107,9 +115,23 @@ class XahauBridge {
     return r.xrplContext;
   }
 
-  _hasLedgerWork(state) {
+  // everpocket's Nomad with its lease renewal switched off: the core renews leases (see the
+  // file comment). Prune and grow — dropping dead nodes, buying replacements — stay everpocket's.
+  _nomadClass() {
+    if (!this._SelfRenewingNomad) {
+      const Base = this.evp.NomadContext;
+      this._SelfRenewingNomad = class SelfRenewingNomad extends Base {
+        async extend() { /* renewals are the core's "extend" intents */ }
+      };
+    }
+    return this._SelfRenewingNomad;
+  }
+
+  _hasLedgerWork(state, lcl = 0) {
     return Object.keys(state.payouts).length > 0
       || Object.values(state.channels).some((c) => c.redeemPending)
+      // a renewal in flight, or one just made whose new expiry the lease fact has yet to show
+      || Object.values(state.leases || {}).some((l) => l && (l.pending || (l.extendedLcl && lcl - l.extendedLcl <= 2)))
       || !!state.treasury.offerPending;
   }
 
@@ -149,7 +171,7 @@ class XahauBridge {
   }
 
   async observe(ctx, state, { stateDir = null } = {}) {
-    if (ctx.lclSeqNo % this.factsEvery !== 0 && !this._hasLedgerWork(state)) return null;
+    if (ctx.lclSeqNo % this.factsEvery !== 0 && !this._hasLedgerWork(state, ctx.lclSeqNo)) return null;
     const r = this._contexts(ctx);
     const mark = (t) => this.log(`observe lcl ${ctx.lclSeqNo}: ${t}`);
     mark('xrpl init');
@@ -229,10 +251,11 @@ class XahauBridge {
     return out;
   }
 
-  async submit(ctx, intents) {
+  async submit(ctx, intents, { stateDir = null } = {}) {
     const xrpl = await this._xrpl(ctx);
     const results = [];
     for (const intent of intents) {
+      if (intent.kind === 'extend') { results.push(await this._extend(ctx, intent, stateDir)); continue; }
       try {
         // everpocket: decides Sequence/LastLedgerSequence by vote, collects signer
         // signatures over NPL, one node submits, the result is voted back to everyone.
@@ -244,6 +267,54 @@ class XahauBridge {
       }
     }
     return results;
+  }
+
+  // A lease renewal the core asked for: everpocket's own extend flow (lease token lookup, the
+  // tenant client's extend-lease Payment with its hook parameters, multisign and submit), then
+  // the cluster record is told the node has more life — through the same ClusterManager
+  // everpocket will persist at the end of the round, so nothing is overwritten. A failure is
+  // reported back and the core backs off for that node alone.
+  //
+  // An attempt abandoned at the time limit is reported as failed but may still finish on its
+  // own — the signature election can conclude late and the Payment land on the ledger. That is
+  // harmless: the next lease fact shows the node paid for and the core no longer finds it due
+  // (or, if the fact came first, renews it once more — a day of hosting bought twice, never
+  // less than intended). The cluster record then stays a renewal behind, which only matters for
+  // nodes everpocket bought under its own maximum life. A late submission can also take the
+  // account sequence the round's next transaction was signed with; that one then fails with
+  // tefPAST_SEQ, which is counted as success here as everpocket does (normally it means the
+  // same transaction landed through another node) — a payout wrongly counted that way is
+  // caught by the ledger check (`expired` after LEDGERS_UNTIL_LOST ledgers) and paid again.
+  async _extend(ctx, intent, stateDir) {
+    const r = this._contexts(ctx);
+    const t0 = Date.now();
+    if (!r.evernodeContext) return { id: intent.id, ok: false, error: 'nomad is off: no lease management' };
+    let node = null;
+    try {
+      const cluster = JSON.parse(fs.readFileSync(path.join(stateDir || process.cwd(), 'cluster.json'), 'utf8'));
+      node = (cluster.nodes || []).find((n) => n.pubkey === intent.node) || null;
+    } catch (e) { return { id: intent.id, ok: false, error: `cluster.json: ${String(e && e.message ? e.message : e).slice(0, 120)}` }; }
+    if (!node || !node.host || !node.name) return { id: intent.id, ok: false, error: 'node is not in cluster.json (any more)' };
+    this.log(`lease: renewing ${String(node.pubkey).slice(0, 10)} on ${node.host} by ${intent.moments} moments`);
+    try {
+      let timer;
+      const gate = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`renewal abandoned after ${EXTEND_TIMEOUT_MS} ms`)), EXTEND_TIMEOUT_MS); });
+      const res = await Promise.race([r.evernodeContext.extendSubmit(node.host, intent.moments, node.name), gate]).finally(() => clearTimeout(timer));
+      const code = res && res.resultCode;
+      const ok = code === 'tesSUCCESS' || code === 'tefALREADY' || code === 'tefPAST_SEQ';
+      if (ok) {
+        // The record everpocket keeps of the node's life, kept in step — and written now, in
+        // case this process does not live to the end of the round.
+        const cm = r.clusterContext && r.clusterContext.clusterManager;
+        if (cm && typeof cm.increaseLifeMoments === 'function') { cm.increaseLifeMoments(node.pubkey, intent.moments); if (typeof cm.persist === 'function') cm.persist(); }
+        this.log(`lease: ${String(node.pubkey).slice(0, 10)} renewed: ${res && res.hash} (${Date.now() - t0} ms)`);
+      } else this.log(`lease: ${String(node.pubkey).slice(0, 10)} renewal rejected: ${code} (${Date.now() - t0} ms)`);
+      return { id: intent.id, ok, hash: res && res.hash, resultCode: code };
+    } catch (e) {
+      const msg = String(e && (e.message || e.error || e.reason) ? (e.message || e.error || e.reason) : e).slice(0, 200);
+      this.log(`lease: ${String(node.pubkey).slice(0, 10)} renewal failed: ${msg} (${Date.now() - t0} ms)`);
+      return { id: intent.id, ok: false, error: msg };
+    }
   }
 
   async afterRound(ctx) {
@@ -306,7 +377,21 @@ XahauBridge.prototype._leaseFact = async function leaseFact(ctx, xrpl, state, st
   const cached = this._evernodeClock();
   const agreed = state && state.treasury && state.treasury.clock;
   const clock = cached.baseIdx !== null ? cached : (agreed && agreed.momentSec > 0 ? { momentSec: agreed.momentSec, baseIdx: agreed.baseIdx } : cached);
-  const r = leaseDeadline({ nodes: cluster.nodes || [], signerList, momentSec: clock.momentSec, baseIdx: clock.baseIdx, nowMs: ctx.timestamp });
+  // What a moment costs per node, from the lease token's URI (the same decode everpocket's
+  // extend flow does), so the core can size a renewal to the EVR on hand. Best effort.
+  const leaseAmounts = new Map();
+  const r0 = this._contexts(ctx);
+  if (r0.evernodeContext && typeof r0.evernodeContext.decodeLeaseTokenUri === 'function' && typeof xrpl.xrplAcc.getURITokens === 'function') {
+    try {
+      for (const t of (await xrpl.xrplAcc.getURITokens()) || []) {
+        try { const info = r0.evernodeContext.decodeLeaseTokenUri(t.URI); if (info && Number(info.leaseAmount) > 0) leaseAmounts.set(t.index, Number(info.leaseAmount)); } catch (e) { /* not a lease token */ }
+      }
+    } catch (e) { /* the fact does without */ }
+  }
+  const r = leaseDeadline({ nodes: cluster.nodes || [], signerList, momentSec: clock.momentSec, baseIdx: clock.baseIdx, nowMs: ctx.timestamp, leaseAmounts });
+  // Without everpocket's Nomad there is nothing to renew leases with: the deadline still
+  // drives the last will, but no node is offered for renewal.
+  if (r.lease && !this.nomadOptions) r.lease.nodes = [];
   return { lease: r.lease, clock: clock.baseIdx !== null && clock.baseIdx !== undefined ? clock : null, reason: r.reason };
 };
 
@@ -355,20 +440,26 @@ function nodeExpiryMs(node, momentSec, baseIdx, slackSec = LEASE_TIMESTAMP_SLACK
 // node whose lease data is missing is not counted — pessimistic: fewer nodes counted can only
 // bring the deadline forward — and noted; only a quorum the counted nodes cannot reach at all
 // leaves the answer "unknown", never a guess: the core then keeps the last known value.
-function leaseDeadline({ nodes, signerList, momentSec, baseIdx = null, nowMs }) {
+function leaseDeadline({ nodes, signerList, momentSec, baseIdx = null, nowMs, leaseAmounts = null }) {
   const weights = new Map();
   let quorum = 0;
   if (signerList && Array.isArray(signerList.SignerEntries)) {
     for (const e of signerList.SignerEntries) { const s = e.SignerEntry || e; weights.set(s.Account, Number(s.SignerWeight || 1)); }
     quorum = Number(signerList.SignerQuorum) || 0;
   }
-  const counted = []; const notes = [];
-  for (const n of (nodes || []).filter((x) => x && x.signerAddress)) {
-    const weight = weights.size ? (weights.get(n.signerAddress) || 0) : 1;
-    if (!weight) continue; // on cluster.json but not on the list: not a signer any more
-    if (!(Number(n.createdOnTimestamp) > 0) || !(Number(n.lifeMoments) > 0)) { notes.push(`signer node ${String(n.pubkey).slice(0, 10)} has no lease data and is not counted`); continue; }
-    counted.push({ expiresAt: nodeExpiryMs({ createdOnTimestamp: Number(n.createdOnTimestamp), lifeMoments: Number(n.lifeMoments) }, momentSec, baseIdx), weight });
+  // Every node with lease data, for the core's renewals; signer nodes also count for the deadline.
+  const all = []; const counted = []; const notes = [];
+  for (const n of (nodes || []).filter((x) => x && x.pubkey)) {
+    const hasData = Number(n.createdOnTimestamp) > 0 && Number(n.lifeMoments) > 0;
+    const weight = n.signerAddress ? (weights.size ? (weights.get(n.signerAddress) || 0) : 1) : 0;
+    if (!hasData) { if (weight) notes.push(`signer node ${String(n.pubkey).slice(0, 10)} has no lease data and is not counted`); continue; }
+    const expiresAt = nodeExpiryMs({ createdOnTimestamp: Number(n.createdOnTimestamp), lifeMoments: Number(n.lifeMoments) }, momentSec, baseIdx);
+    const life = Number(n.lifeMoments); const target = Number(n.targetLifeMoments) || 0; const max = Number(n.maxLifeMoments) || 0;
+    const leaseAmount = leaseAmounts && n.name && leaseAmounts.has(n.name) ? leaseAmounts.get(n.name) : 0;
+    all.push({ id: String(n.pubkey), expiresAt, signer: weight > 0, nomadPending: target > life, maxReached: max > 0 && life >= max, life, maxLife: max, leaseAmount });
+    if (weight) counted.push({ expiresAt, weight });
   }
+  all.sort((a, b) => a.expiresAt - b.expiresAt || (a.id < b.id ? -1 : 1));
   const reason = notes.length ? notes.join('; ') : null;
   if (!counted.length) return { lease: null, reason: reason || 'no signer nodes in cluster.json' };
   if (!quorum) quorum = counted.reduce((s, c) => s + c.weight, 0);
@@ -376,7 +467,7 @@ function leaseDeadline({ nodes, signerList, momentSec, baseIdx = null, nowMs }) 
   let acc = 0; let deadlineMs = null;
   for (const c of counted) { acc += c.weight; if (acc >= quorum) { deadlineMs = c.expiresAt; break; } }
   if (deadlineMs === null) return { lease: null, reason: `${reason ? reason + '; ' : ''}the ${counted.length} signer nodes counted cannot reach the quorum of ${quorum}` };
-  return { lease: { deadlineMs, quorum, signers: counted.length, momentMs: momentSec * 1000, aligned: baseIdx !== null && baseIdx !== undefined, expiries: counted.map((c) => c.expiresAt), asOf: nowMs }, reason };
+  return { lease: { deadlineMs, quorum, signers: counted.length, momentMs: momentSec * 1000, aligned: baseIdx !== null && baseIdx !== undefined, expiries: counted.map((c) => c.expiresAt), nodes: all, asOf: nowMs }, reason };
 }
 
 // ---- Reconciliation ---------------------------------------------------------------------------

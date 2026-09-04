@@ -22,7 +22,7 @@ const { runRound, diagMark } = require('./round');
 const { makeConfig } = require('./core/connector');
 
 const CONFIG_FILE = 'everlink.config.json';
-const ROUND_WATCHDOG_MS = 120000;
+const ROUND_WATCHDOG_MS = 240000; // under HotPocket's 5-minute execution limit; a lease renewal or a node acquisition can take a minute or two
 
 function loadConfig() {
   // Look next to the binary first (deployed alongside index.js), then in the state dir.

@@ -135,19 +135,29 @@ class MockXahau {
     }
   }
 
-  // Leases: a node's hosting runs out at `expiresAt` unless the tenant pays the host.
-  addLease(nodePubkey, { host, expiresAt, evrPerMoment = 2, momentMs = 3600000 }) {
-    this.leases.set(nodePubkey, { host, expiresAt, evrPerMoment, momentMs });
+  // Leases: a node's hosting runs out at `expiresAt` unless the tenant pays the host. A host
+  // with `refuse` set will not take the payment (its hook rejects it), as a host that has gone
+  // inactive on the Evernode registry would.
+  addLease(nodePubkey, { host, expiresAt, evrPerMoment = 2, momentMs = 3600000, refuse = false }) {
+    this.leases.set(nodePubkey, { host, expiresAt, evrPerMoment, momentMs, refuse });
   }
   extendLease(tenant, nodePubkey, moments, dedupeKey) {
     const lease = this.leases.get(nodePubkey);
     if (!lease) throw new Error('no lease');
+    if (lease.refuse) {
+      if (this.applied.has(dedupeKey)) return this.applied.get(dedupeKey);
+      const result = { hash: crypto.createHash('sha256').update(dedupeKey).digest('hex').toUpperCase(), resultCode: 'tecHOOK_REJECTED' };
+      this.applied.set(dedupeKey, result);
+      this.log.push({ ledgerIndex: this.ledgerIndex, type: 'Payment', resultCode: result.resultCode, hash: result.hash, lease: nodePubkey });
+      return result;
+    }
+    const fresh = !this.applied.has(dedupeKey); // N nodes submit the same renewal: one payment, one extension
     const res = this.submitMultisigned({
       TransactionType: 'Payment', Account: tenant, Destination: lease.host, Fee: '12',
       Amount: { currency: 'EVR', issuer: this.evrIssuer, value: String(lease.evrPerMoment * moments) },
       Memos: [{ type: 'evnExtendLease', data: nodePubkey }],
     }, dedupeKey);
-    if (res.resultCode === 'tesSUCCESS') lease.expiresAt += moments * lease.momentMs;
+    if (fresh && res.resultCode === 'tesSUCCESS') lease.expiresAt += moments * lease.momentMs;
     return res;
   }
 

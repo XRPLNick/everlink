@@ -19,10 +19,14 @@
 //   * Peers are paid out by multisigned Payments once their balance crosses a
 //     threshold (or on request). A peer's exposure to the connector is bounded by that
 //     threshold; the connector's custodial exposure is its float plus unredeemed claims.
+//   * The cluster pays for its own hosting: the voted "lease" fact says until when each node's
+//     Evernode lease is paid; the core renews the most urgent one per round (an "extend" intent
+//     the bridge carries out), backing off per node when a host will not take the payment, so
+//     that one bad host never stops the others from being renewed.
 //   * The last will: the cluster's account is controlled only by its nodes' signer keys, so
 //     when the nodes' hosting is about to lapse and has not been extended, the connector stops
 //     taking money, redeems every claim and pays every peer out to where its money belongs —
-//     while it can still sign. Driven by the voted "lease" fact (see the bridge).
+//     while it can still sign. Driven by the same lease fact.
 
 const { toBig, str, toSigned, sstr, bpsOf, min: bigMin } = require('./amounts');
 const ilp = require('./ilp');
@@ -36,6 +40,10 @@ const PRUNE_EVERY_ROUNDS = 100;
 const PAYOUT_BACKOFF_ROUNDS = 20; // after a failed payout: wait this long, doubling per failure ...
 const PAYOUT_BACKOFF_MAX_ROUNDS = 2000; // ... up to this (100 minutes at 3 s), until settle_to or a success resets it
 const MAX_INTENTS_PER_ROUND = 4;  // each intent is a full multisign over NPL; a round must stay well inside its time limit
+const LEASE_RETRY_ROUNDS = 20;    // after a failed lease renewal: wait this long, doubling per failure ...
+const LEASE_RETRY_MAX_ROUNDS = 200; // ... up to this (10 minutes at 3 s); a success resets it
+const LEASE_PENDING_ROUNDS = 2;   // a renewal's result always arrives in its own round; older "pending" means the round died
+const LEASE_FACT_LAG_ROUNDS = 100; // after a renewal, wait this long for the fact to show it before renewing the node again
 const DEFAULT_MOMENT_MS = 3600000;
 const TF_CLOSE = 0x00020000;      // PaymentChannelClaim flag: close the channel (immediate for the destination)
 const MEMO_TYPE = Buffer.from('everlink/intent').toString('hex').toUpperCase();
@@ -81,13 +89,18 @@ const DEFAULT_CONFIG = Object.freeze({
   evrTopUpXahDrops: '5000000',      // spend up to 5 XAH per top-up on the Xahau DEX
   evrTopUpMinEvr: '10',             // ask at least this many EVR for it (limit order)
   // Last will (see money.md). The lease fact says when the signer quorum's hosting is paid
-  // until; if that is this close and the Nomad loop has not extended it, wind down: no new
+  // until; if that is this close and the renewals (above) have not managed it, wind down: no new
   // Prepares or claims, redeem everything, pay every peer's balance to its payout address —
   // or, failing one, back to the account that funded its channel. 0 disables.
   lastWillSec: 1800,
   lastWillMinDrops: '1000',         // balances below this are not worth a transaction and are left behind
   lastWillReserveDrops: '3000000',  // while winding down, keep only this much back (the ledger's own reserve for the account) instead of reserveDrops
-  lastWillGraceRounds: 100,         // no wind-down in a cluster's first rounds: the Nomad loop's first extension comes first
+  lastWillGraceRounds: 100,         // no wind-down in a cluster's first rounds: the first renewals come first
+  // Hosting (see money.md). Each node's Evernode lease is renewed by the cluster itself once
+  // it has this many moments left (on the lease fact's pessimistic clock), by this many moments,
+  // most urgent node first, one per round. 0 for leaseExtendAheadMoments disables renewals.
+  leaseExtendAheadMoments: 2,
+  leaseExtendMoments: 24,
 });
 
 function makeConfig(overrides = {}) {
@@ -106,11 +119,13 @@ function initialState() {
     treasury: {
       masterBalance: '0', evrBalance: '0', feesAccrued: '0',
       ledgerIndex: 0, offerPending: null, offerBackoffUntilLcl: 0,
+      evrSpentSinceFact: 0, // EVR paid for renewals since the last observation reported the balance
       lease: null,          // latest voted lease fact: { deadlineMs, quorum, signers, momentMs, ... }
       leaseNote: null,      // why the bridge could not (fully) tell, when it could not
       clock: null,          // Evernode's moment clock once a vote carried it: { momentSec, baseIdx }
     },
     lastWill: null,         // set while winding down: { sinceLcl, sinceTs, deadlineMs }
+    leases: {},             // node pubkey -> renewal bookkeeping: { pending, attempts, backoffUntilLcl, lastLcl, extendedLcl, moments }
     stats: { prepares: 0, fulfills: 0, rejects: 0, expiries: 0, claims: 0 },
   };
 }
@@ -150,6 +165,10 @@ function payoutHome(state, pubkey) {
 function payoutBackoff(failures) {
   return Math.min(PAYOUT_BACKOFF_ROUNDS * 2 ** Math.max(0, failures - 1), PAYOUT_BACKOFF_MAX_ROUNDS);
 }
+// Rounds to wait before renewing a node's lease again after n failures in a row.
+function leaseBackoff(failures) {
+  return Math.min(LEASE_RETRY_ROUNDS * 2 ** Math.max(0, failures - 1), LEASE_RETRY_MAX_ROUNDS);
+}
 
 function nextId(state, prefix) {
   state.seq += 1;
@@ -187,7 +206,7 @@ class RoundContext {
     const t = state.treasury;
     if (facts.ledgerIndex !== undefined) t.ledgerIndex = facts.ledgerIndex;
     if (facts.masterBalance !== undefined) t.masterBalance = str(facts.masterBalance);
-    if (facts.evrBalance !== undefined) t.evrBalance = String(facts.evrBalance);
+    if (facts.evrBalance !== undefined) { t.evrBalance = String(facts.evrBalance); t.evrSpentSinceFact = 0; }
     // The cluster's own hosting: until when the signer quorum's leases are paid (null = unknown
     // this round; the last known value is kept, so an unknown never changes the wind-down state).
     if (facts.lease && typeof facts.lease.deadlineMs === 'number') t.lease = facts.lease;
@@ -260,8 +279,8 @@ class RoundContext {
   }
 
   // The last will. `lease.deadlineMs` is when the signer quorum's hosting runs out unless the
-  // Nomad loop extends it — which it tries well before this point, so being this close means it
-  // could not (no EVR, no host answering, no ledger). Enter the wind-down with `lastWillSec` of
+  // renewals extend it — which start two moments before this point, so being this close means
+  // they could not (no EVR, no host answering, no ledger). Enter the wind-down with `lastWillSec` of
   // hosting left; leave it once a full moment more than that is paid for again (hysteresis).
   windDown() {
     const { state, config } = this;
@@ -275,7 +294,7 @@ class RoundContext {
     const left = lease.deadlineMs - this.ts;
     if (!state.lastWill) {
       // A cluster's first rounds: its leases may be short by design (a fresh deployment) and
-      // the Nomad loop has not had its first go at extending them yet.
+      // the first renewals are still to come.
       if (state.rounds < config.lastWillGraceRounds) return;
       if (left > config.lastWillSec * 1000) return;
       state.lastWill = { sinceLcl: this.lcl, sinceTs: this.ts, deadlineMs: lease.deadlineMs };
@@ -581,6 +600,52 @@ class RoundContext {
     }
   }
 
+  planRenewals() {
+    const { state, config } = this;
+    if (!state.leases) state.leases = {}; // state written before renewals existed
+    const lease = state.treasury.lease;
+    const nodes = lease && Array.isArray(lease.nodes) ? lease.nodes : [];
+    // Bookkeeping for nodes that are gone (pruned, replaced) goes with them.
+    const known = new Set(nodes.map((n) => n.id));
+    for (const id of Object.keys(state.leases)) if (!known.has(id)) delete state.leases[id];
+    if (!config.leaseExtendAheadMoments || !nodes.length) return;
+    const ahead = config.leaseExtendAheadMoments * (lease.momentMs || DEFAULT_MOMENT_MS);
+    const due = nodes
+      .filter((n) => typeof n.expiresAt === 'number' && !n.nomadPending && !n.maxReached && n.expiresAt - this.ts <= ahead)
+      .sort((a, b) => a.expiresAt - b.expiresAt || (a.id < b.id ? -1 : 1));
+    for (const n of due) {
+      const rec = state.leases[n.id] || { pending: null, attempts: 0, backoffUntilLcl: 0, lastLcl: 0, extendedLcl: 0, moments: 0, expiresAt: null };
+      // A renewal whose result never came back: the round that submitted it died. Whether the
+      // payment went out is unknown; count it as failed and try again after a backoff (a second
+      // payment only buys the node more life, and the fact then underestimates it, which is safe).
+      if (rec.pending && this.lcl - rec.lastLcl >= LEASE_PENDING_ROUNDS) {
+        rec.pending = null; rec.attempts += 1; rec.backoffUntilLcl = this.lcl + leaseBackoff(rec.attempts);
+        this.note(`lease: renewal of ${n.id.slice(0, 10)} planned at lcl ${rec.lastLcl} never reported back; retrying after ${rec.backoffUntilLcl - this.lcl} rounds`);
+        state.leases[n.id] = rec;
+      }
+      if (rec.pending || rec.backoffUntilLcl > this.lcl) continue;
+      // Just renewed, and the fact has not caught up with the ledger yet: not again — unless it
+      // never catches up, in which case one more purchase beats a lapsed lease.
+      if (rec.extendedLcl && rec.expiresAt === n.expiresAt && this.lcl - rec.extendedLcl < LEASE_FACT_LAG_ROUNDS) continue;
+      if (this.intents.length >= MAX_INTENTS_PER_ROUND) return;
+      // How much to buy: the configured amount, within the node's maximum life, and — when the
+      // fact says what a moment costs — within the EVR on hand (never less than one moment).
+      let moments = config.leaseExtendMoments;
+      if (n.maxLife > 0 && n.life >= 0) moments = Math.min(moments, n.maxLife - n.life);
+      if (n.leaseAmount > 0) {
+        const evr = Number(state.treasury.evrBalance) - (Number(state.treasury.evrSpentSinceFact) || 0);
+        if (Number.isFinite(evr)) moments = Math.min(moments, Math.floor(evr / n.leaseAmount + 1e-9));
+      }
+      if (moments < 1) { this.note(`lease: cannot afford a moment for ${n.id.slice(0, 10)} (EVR ${state.treasury.evrBalance})`); continue; }
+      const intentId = nextId(state, 'x');
+      rec.pending = intentId; rec.lastLcl = this.lcl; rec.moments = moments; rec.expiresAt = n.expiresAt;
+      state.leases[n.id] = rec;
+      this.note(`lease: renewing ${n.id.slice(0, 10)} by ${moments} moments (${Math.max(0, Math.round((n.expiresAt - this.ts) / 60000))} min left${rec.attempts ? `, attempt ${rec.attempts + 1}` : ''})`);
+      this.intents.push({ id: intentId, kind: 'extend', node: n.id, moments });
+      return; // one renewal per round: each is a multisign election of its own
+    }
+  }
+
   plan() {
     const { state, config } = this;
     this.prunePeers();
@@ -595,6 +660,13 @@ class RoundContext {
     const room = () => this.intents.length < MAX_INTENTS_PER_ROUND;
 
     const ledger = state.treasury.ledgerIndex || 0;
+
+    // 0. Keep the hosts paid. The lease fact lists every node with the time its hosting is paid
+    //    until; the one closest to running out is renewed first, one per round, and a node whose
+    //    host would not take the payment waits out a backoff of its own so the others get their
+    //    turn. Nodes everpocket is still buying initial life for, and nodes at their maximum, are
+    //    left to it. This comes before everything else: a cluster that dies can do nothing else.
+    this.planRenewals();
 
     // 1. Redeem channels: on threshold, as soon as the owner starts closing them — and all of
     //    them, whatever the amount, while winding down (a claim not on the ledger dies with us).
@@ -710,6 +782,22 @@ class RoundContext {
   applyIntentResults(results) {
     const { state } = this;
     for (const r of results || []) {
+      const leaseNode = Object.keys(state.leases || {}).find((id) => state.leases[id].pending === r.id);
+      if (leaseNode) {
+        const rec = state.leases[leaseNode];
+        rec.pending = null;
+        if (r.ok) {
+          rec.attempts = 0; rec.backoffUntilLcl = 0; rec.extendedLcl = this.lcl; rec.lastHash = r.hash || null;
+          const node = ((state.treasury.lease && state.treasury.lease.nodes) || []).find((n) => n.id === leaseNode);
+          if (node && node.leaseAmount > 0) state.treasury.evrSpentSinceFact = (Number(state.treasury.evrSpentSinceFact) || 0) + node.leaseAmount * rec.moments;
+          this.note(`lease: ${leaseNode.slice(0, 10)} renewed by ${rec.moments} moments (${r.hash || 'no hash'})`);
+        } else {
+          rec.attempts += 1;
+          rec.backoffUntilLcl = this.lcl + leaseBackoff(rec.attempts);
+          this.note(`lease: ${leaseNode.slice(0, 10)} renewal failed (${String(r.error || r.resultCode || 'unknown').slice(0, 120)}); attempt ${rec.attempts}, next in ${rec.backoffUntilLcl - this.lcl} rounds`);
+        }
+        continue;
+      }
       const po = state.payouts[r.id];
       if (po) {
         if (r.ok) {
@@ -773,6 +861,7 @@ function handleReadRequest(state, config, peer, raw) {
         minPayoutDrops: config.minPayoutDrops, rounds: state.rounds, stats: state.stats,
         lastWillSec: config.lastWillSec, winding: !!state.lastWill, lastWill: state.lastWill || null,
         lease: state.treasury.lease || null, leaseNote: state.treasury.leaseNote || null,
+        leases: state.leases || {},
       };
     case 'balance':
       return {

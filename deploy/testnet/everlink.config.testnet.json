@@ -23,7 +23,9 @@
     "lastWillSec": 1800,
     "lastWillMinDrops": "1000",
     "lastWillReserveDrops": "3000000",
-    "lastWillGraceRounds": 100
+    "lastWillGraceRounds": 100,
+    "leaseExtendAheadMoments": 2,
+    "leaseExtendMoments": 24
   },
   "xahau": {
     "enabled": true,

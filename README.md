@@ -19,9 +19,13 @@ unspent 2 XAH. A second cluster, deployed the same evening on three new hosts wi
 leases, then extended its own leases without anyone asking — three EVR payments to its hosts
 co-signed by its three nodes — buying itself nineteen more hours of hosting for 0.000051 EVR. With that proven, the
 account's master key was disabled (`AccountSet asfDisableMaster`, ledger 25,544,790): the
-cluster's 2-of-3 signer list is now the only thing that can move funds in it — nobody runs
-the connector, and nobody controls its account. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
-end-to-end are tested (`npm test`, 24 tests); the local `hpdevkit` run is in `deploy/local/`,
+cluster's 2-of-3 signer list became the only thing that could move funds in it — nobody ran
+the connector, and nobody controlled its account. The next day it renewed one lease on its
+own and failed to renew the other two; at 15:20 UTC on 4 September their hosts reclaimed
+those nodes, and with one node of three left the cluster could neither close ledgers nor sign.
+Its account is frozen for good — nobody's money, no peers had balances — and the renewal loop
+has been rebuilt so that one host cannot hold up the others ([docs/proof.md](docs/proof.md#day-two-how-the-second-cluster-died)). The deterministic core, the peer plugin, the multi-node simulator and the STREAM
+end-to-end are tested (`npm test`, 27 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
 [docs/proof.md](docs/proof.md), together with a packet-level trace of a payment through the
@@ -49,7 +53,7 @@ plugin API, the money model, configuration, troubleshooting — is in [docs/](do
    │  balances │ pending packets │ channels & claims │ payouts │ treasury    │
    └────────────────────────────┬────────────────────────────────────────────┘
                                 │ multisigned PaymentChannelClaim / Payment / OfferCreate
-                                ▼          + lease extensions in EVR (everpocket Nomad)
+                                ▼          + lease renewals in EVR, one node per round
                      Xahau: cluster's multisig account
 ```
 
@@ -64,8 +68,10 @@ plugin API, the money model, configuration, troubleshooting — is in [docs/](do
   a Payment to the peer's Xahau address — only from funds already on the ledger, never from
   unredeemed claims.
 * **Self-funding.** Fees accrue in XAH. The treasury keeps an EVR reserve, buying EVR on the
-  Xahau DEX from free equity; everpocket's `NomadContext` extends the nodes' leases and
-  replaces dead nodes from the same account.
+  Xahau DEX from free equity; the contract renews each node's Evernode lease itself — the most
+  urgent node first, one per round, a host that refuses the payment backing off on its own so
+  it never holds up the others — and everpocket's `NomadContext` replaces dead nodes from the
+  same account.
 * **Nothing lent.** A peer can only send what it has prepaid (plus a 0.01 XAH probe credit so
   receivers can run STREAM's rate probes). A peer's exposure to the connector is bounded by
   the payout threshold; the connector's custodial exposure is its float plus unredeemed claims.
@@ -81,7 +87,7 @@ plugin API, the money model, configuration, troubleshooting — is in [docs/](do
 contract/            the HotPocket contract (bundled with ncc for deployment)
   src/core/          deterministic core: connector.js (rounds), ilp.js, claims.js, codec.js, state.js
   src/round.js       one consensus round: inputs -> facts -> core -> intents -> outputs -> persist
-  src/adapters/      xahau-bridge.js (everpocket: votes, multisig, Nomad), npl-vote.js
+  src/adapters/      xahau-bridge.js (everpocket: votes, multisig, lease renewals, Nomad prune/grow), npl-vote.js
   src/index.js       HotPocket entry point (hotpocket-nodejs-contract)
   everlink.config.example.json, hp.cfg.override
 plugin/              ilp-plugin-hotpocket: the ilp-plugin interface over the HotPocket user channel
@@ -127,10 +133,16 @@ Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `last_will`,
 * everpocket's own bookkeeping (`transactions.json`) is written from unvoted ledger queries.
 * A cluster that dies fast takes the account with it. With the master key retired, nothing but
   the nodes' signer keys can move funds. The last will covers the slow death — leases that cannot
-  be extended — by paying everyone out while a quorum can still sign; it cannot cover all nodes
+  be renewed — by paying everyone out while a quorum can still sign; it cannot cover all nodes
   lost inside one half hour, or a bug that stalls consensus, and it cannot pay a peer that never
-  gave it an address or a channel. There is no hand-over to a successor cluster. The mainnet
-  cluster runs the code from before the last will existed, and cannot be upgraded.
+  gave it an address or a channel. There is no hand-over to a successor cluster, and no upgrade
+  path: the mainnet cluster that died on 4 September ran the code from before the last will and
+  the rebuilt renewal loop existed.
+* Staying alive is not yet proven. Two mainnet clusters renewed leases on their own and both
+  died at a later renewal; the second one's failure is diagnosed only by inference, because
+  its diagnostics kept a minute of history. The rebuilt loop (one node per round, most urgent
+  first, per-node backoff, full history) is tested in the simulator and has not yet run on
+  mainnet.
 * Peers' HotPocket identities are their account at the connector: lose the key, lose the credit.
 
 ## License
