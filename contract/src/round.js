@@ -10,7 +10,7 @@
 //   4. bridge.submit(): multisign & submit the intents (everpocket votes on the result)
 //   5. deliver outputs to connected users, persist state
 //
-// A `bridge` is { observe(ctx, state) -> facts|null, submit(ctx, intents) -> results, afterRound?(ctx, state) }.
+// A `bridge` is { observe(ctx, state, { stateDir }) -> facts|null, submit(ctx, intents) -> results, afterRound?(ctx, state) }.
 //
 // Diagnostics: with `diagFile` set (index.js points it outside the consensus state directory)
 // every round appends its timings, facts summary, intents, results and errors to that per-node
@@ -26,7 +26,10 @@ const stateStore = require('./core/state');
 
 // A node that cannot reach the ledger must not hold up the round: observations and the Nomad
 // housekeeping are abandoned after these limits (the core then sees no facts this round).
-// Submissions are never abandoned mid-way (a payout that did go out must not be recorded as failed).
+// Submissions are never abandoned mid-way by these timeouts (a payout that did go out must not be
+// recorded as failed); the state is saved before they start, so a process that dies during them
+// (index.js's watchdog, HotPocket's execution limit) leaves the planned payouts on record for the
+// bridge to reconcile against the ledger by their memos.
 const OBSERVE_TIMEOUT_MS = 25000;
 const AFTER_TIMEOUT_MS = 30000;
 const DIAG_KEEP = 8;
@@ -169,7 +172,7 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
         if (req && req.t === 'diag') {
           const d = diagFile ? diagLoad(diagFile) : { rounds: [] };
           d.now = new Date().toISOString();
-          d.state = { rounds: state.rounds, lastLcl: state.lastLcl, peers: Object.keys(state.peers || {}).length, channels: Object.keys(state.channels || {}).length, payouts: Object.keys(state.payouts || {}).length, treasury: state.treasury };
+          d.state = { rounds: state.rounds, lastLcl: state.lastLcl, peers: Object.keys(state.peers || {}).length, channels: Object.keys(state.channels || {}).length, payouts: Object.keys(state.payouts || {}).length, treasury: state.treasury, lastWill: state.lastWill || null };
           if (req.probe) d.probe = await probeConnectivity(stateDir);
           if (req.layers && bridge) d.layers = await probeLayers(bridge.rippleServer || 'wss://xahau.network', bridge.master).catch((e) => ({ error: String(e && e.message ? e.message : e) }));
           if (req.ledger && bridge && bridge.probeLedger) d.ledger = await bridge.probeLedger().catch((e) => ({ error: String(e && e.message ? e.message : e) }));
@@ -200,11 +203,11 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
   if (bridge) {
     t = clock();
     mark('observe start');
-    try { facts = await withTimeout(bridge.observe(ctx, state), observeTimeout, 'observe'); } catch (e) {
+    try { facts = await withTimeout(bridge.observe(ctx, state, { stateDir }), observeTimeout, 'observe'); } catch (e) {
       const msg = String(e && e.message ? e.message : e); log('observe failed', msg); diag.errors.push(`observe: ${msg}`);
     }
     diag.phases.observe = clock() - t;
-    diag.facts = facts ? { ledgerIndex: facts.ledgerIndex, masterBalance: facts.masterBalance, evrBalance: facts.evrBalance, channels: (facts.channels || []).length, validated: (facts.validatedTxs || []).length, failed: (facts.failedTxs || []).length } : null;
+    diag.facts = facts ? { ledgerIndex: facts.ledgerIndex, masterBalance: facts.masterBalance, evrBalance: facts.evrBalance, channels: (facts.channels || []).length, validated: (facts.validatedTxs || []).length, failed: (facts.failedTxs || []).length, lease: facts.lease || null } : null;
   }
 
   mark(`observe done: ${facts ? 'facts' : 'no facts'}`);
@@ -217,6 +220,12 @@ async function runRound(ctx, { stateDir, config, bridge = null, logger = null, d
   diag.intents = rc.intents.map((i) => `${i.kind || i.tx.TransactionType}:${i.id}`);
 
   if (rc.intents.length && bridge) {
+    // Persist before submitting: should this process die while the transactions are out, the
+    // saved state still shows what was planned (balances debited, payouts "planned"), and the
+    // next round reconciles it against the ledger instead of paying again. The submissions
+    // themselves are never abandoned mid-way by a timeout here.
+    stateStore.save(stateDir, state);
+    mark('state saved before submit');
     t = clock();
     let results = [];
     try { results = await bridge.submit(ctx, rc.intents); } catch (e) {

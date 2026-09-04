@@ -113,8 +113,9 @@ strings of drops.
 | event | payload | when |
 |---|---|---|
 | `connect` / `disconnect` | — | Connection state changed by your own calls. |
-| `payout` | `{ status: 'submitted' \| 'validated' \| 'failed', amt, tx?, reason? }` | The connector reports on a payout to you. |
+| `payout` | `{ status: 'submitted' \| 'validated' \| 'failed', amt, tx?, reason?, retryAfterRounds?, lastWill? }` | The connector reports on a payout to you. `lastWill: true` marks a payout made by the connector's last will. |
 | `claim_ack` | `{ ch, amt, ok, credited?, balance?, reason?, … }` | Result of a claim (also resolves the `sendClaim` promise). |
+| `last_will` | `{ active, deadline, balance?, payoutTo?, payoutSource?, hint? }` | The connector is winding down (`active: true`: its hosting ends at `deadline` and your balance is being paid to `payoutTo`) or has recovered (`active: false`). See [money.md](money.md#if-the-cluster-dies-the-last-will). |
 | `ack` | `{ of: 'settle_to' \| 'withdraw', … }` | A setting was applied. |
 | `connector_error` | `{ reason, ref? }` | The connector answered one of your inputs with `err` (also passed to `log`). |
 | `message` | any other output | Forward-compatibility hook. |

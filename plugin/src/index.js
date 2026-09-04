@@ -194,6 +194,7 @@ class HotPocketPlugin extends EventEmitter {
         return;
       }
       case 'payout': this.emit('payout', msg); return;
+      case 'last_will': this.emit('last_will', msg); this._log(msg.active ? 'connector is winding down' : 'connector back to normal operation', msg); return;
       case 'ack': this.emit('ack', msg); return;
       case 'err': this.emit('connector_error', msg); this._log('connector error', msg); return;
       default: this.emit('message', msg);

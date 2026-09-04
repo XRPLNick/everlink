@@ -19,8 +19,12 @@
 //   * Peers are paid out by multisigned Payments once their balance crosses a
 //     threshold (or on request). A peer's exposure to the connector is bounded by that
 //     threshold; the connector's custodial exposure is its float plus unredeemed claims.
+//   * The last will: the cluster's account is controlled only by its nodes' signer keys, so
+//     when the nodes' hosting is about to lapse and has not been extended, the connector stops
+//     taking money, redeems every claim and pays every peer out to where its money belongs —
+//     while it can still sign. Driven by the voted "lease" fact (see the bridge).
 
-const { toBig, str, toSigned, sstr, bpsOf } = require('./amounts');
+const { toBig, str, toSigned, sstr, bpsOf, min: bigMin } = require('./amounts');
 const ilp = require('./ilp');
 const codec = require('./codec');
 const claims = require('./claims');
@@ -29,7 +33,25 @@ const STATE_VERSION = 1;
 const OFFER_BACKOFF_ROUNDS = 20;  // rounds to wait after a failed EVR top-up before retrying
 const REDEEM_RETRY_ROUNDS = 200;  // a redemption never confirmed is retried after this many rounds
 const PRUNE_EVERY_ROUNDS = 100;
+const PAYOUT_BACKOFF_ROUNDS = 20; // after a failed payout: wait this long, doubling per failure ...
+const PAYOUT_BACKOFF_MAX_ROUNDS = 2000; // ... up to this (100 minutes at 3 s), until settle_to or a success resets it
+const MAX_INTENTS_PER_ROUND = 4;  // each intent is a full multisign over NPL; a round must stay well inside its time limit
+const DEFAULT_MOMENT_MS = 3600000;
 const TF_CLOSE = 0x00020000;      // PaymentChannelClaim flag: close the channel (immediate for the destination)
+const MEMO_TYPE = Buffer.from('everlink/intent').toString('hex').toUpperCase();
+
+// Every transaction the cluster submits names the intent it fulfils in a memo, so a round that
+// died between submitting and recording can be reconciled against the ledger afterwards.
+function intentMemo(id) {
+  return [{ Memo: { MemoType: MEMO_TYPE, MemoData: Buffer.from(id).toString('hex').toUpperCase() } }];
+}
+function intentIdFromMemos(memos) {
+  for (const m of memos || []) {
+    const memo = m && m.Memo;
+    if (memo && String(memo.MemoType || '').toUpperCase() === MEMO_TYPE && memo.MemoData) return Buffer.from(memo.MemoData, 'hex').toString('utf8');
+  }
+  return null;
+}
 
 const DEFAULT_CONFIG = Object.freeze({
   // ILP
@@ -58,6 +80,14 @@ const DEFAULT_CONFIG = Object.freeze({
   evrReserve: '20',                 // keep at least this many EVR
   evrTopUpXahDrops: '5000000',      // spend up to 5 XAH per top-up on the Xahau DEX
   evrTopUpMinEvr: '10',             // ask at least this many EVR for it (limit order)
+  // Last will (see money.md). The lease fact says when the signer quorum's hosting is paid
+  // until; if that is this close and the Nomad loop has not extended it, wind down: no new
+  // Prepares or claims, redeem everything, pay every peer's balance to its payout address —
+  // or, failing one, back to the account that funded its channel. 0 disables.
+  lastWillSec: 1800,
+  lastWillMinDrops: '1000',         // balances below this are not worth a transaction and are left behind
+  lastWillReserveDrops: '3000000',  // while winding down, keep only this much back (the ledger's own reserve for the account) instead of reserveDrops
+  lastWillGraceRounds: 100,         // no wind-down in a cluster's first rounds: the Nomad loop's first extension comes first
 });
 
 function makeConfig(overrides = {}) {
@@ -76,7 +106,11 @@ function initialState() {
     treasury: {
       masterBalance: '0', evrBalance: '0', feesAccrued: '0',
       ledgerIndex: 0, offerPending: null, offerBackoffUntilLcl: 0,
+      lease: null,          // latest voted lease fact: { deadlineMs, quorum, signers, momentMs, ... }
+      leaseNote: null,      // why the bridge could not (fully) tell, when it could not
+      clock: null,          // Evernode's moment clock once a vote carried it: { momentSec, baseIdx }
     },
+    lastWill: null,         // set while winding down: { sinceLcl, sinceTs, deadlineMs }
     stats: { prepares: 0, fulfills: 0, rejects: 0, expiries: 0, claims: 0 },
   };
 }
@@ -96,6 +130,25 @@ function ensurePeer(state, pubkey, lcl, config) {
 
 function peerAddress(config, pubkey) {
   return `${config.ilpAddress}.${pubkey}`;
+}
+
+// Where a peer's money goes when it is paid out without asking: the address it registered with
+// settle_to, or else the account that owned the first channel it funded itself from (remembered
+// on the peer record when the channel was bound, so it survives the channel closing). Null when
+// neither exists.
+function payoutHome(state, pubkey) {
+  const p = state.peers[pubkey];
+  if (!p) return null;
+  if (p.payoutAddress) return { address: p.payoutAddress, tag: p.payoutTag, source: 'settle_to' };
+  if (p.channelOwner) return { address: p.channelOwner, tag: null, source: 'channel' };
+  const mine = Object.entries(state.channels).filter(([, c]) => c.peer === pubkey && c.owner).sort(([a], [b]) => (a < b ? -1 : 1));
+  if (mine.length) return { address: mine[0][1].owner, tag: null, source: 'channel' };
+  return null;
+}
+
+// Rounds to wait before retrying a peer's payout after it failed n times in a row.
+function payoutBackoff(failures) {
+  return Math.min(PAYOUT_BACKOFF_ROUNDS * 2 ** Math.max(0, failures - 1), PAYOUT_BACKOFF_MAX_ROUNDS);
 }
 
 function nextId(state, prefix) {
@@ -135,6 +188,31 @@ class RoundContext {
     if (facts.ledgerIndex !== undefined) t.ledgerIndex = facts.ledgerIndex;
     if (facts.masterBalance !== undefined) t.masterBalance = str(facts.masterBalance);
     if (facts.evrBalance !== undefined) t.evrBalance = String(facts.evrBalance);
+    // The cluster's own hosting: until when the signer quorum's leases are paid (null = unknown
+    // this round; the last known value is kept, so an unknown never changes the wind-down state).
+    if (facts.lease && typeof facts.lease.deadlineMs === 'number') t.lease = facts.lease;
+    // Evernode's moment clock, once any vote carried it: from then on every node derives the
+    // lease fact from this agreed value rather than from what it cached itself.
+    if (facts.clock && facts.clock.momentSec > 0 && Number.isFinite(facts.clock.baseIdx)) t.clock = { momentSec: facts.clock.momentSec, baseIdx: facts.clock.baseIdx };
+
+    // Payouts planned in a round that never got to record its submissions (the process died
+    // between submitting and saving): the bridge looked for them on the ledger by their memo.
+    for (const r of facts.reconciled || []) {
+      const po = state.payouts[r.id];
+      if (!po || po.status !== 'planned') continue;
+      if (r.hash) {
+        po.status = 'submitted'; po.txHash = r.hash;
+        const msg = { t: 'payout', status: 'submitted', amt: po.amount, tx: r.hash };
+        if (po.lastWill) msg.lastWill = true;
+        this.out(po.peer, msg);
+        this.note(`payout ${r.id} recovered from the ledger as ${r.hash}`);
+        if (r.resultCode) this.settleTx(r.hash, r.resultCode === 'tesSUCCESS', r.resultCode);
+      } else if (r.lost) {
+        this.note(`payout ${r.id} was never submitted; refunding`);
+        this.payoutFailed(r.id, po, 'submission lost', null, { countsAsFailure: false });
+      }
+    }
+    if (facts.leaseNote !== undefined) t.leaseNote = facts.leaseNote || null;
 
     // Channels paying into the connector.
     const seen = new Set();
@@ -181,6 +259,67 @@ class RoundContext {
     for (const f of facts.failedTxs || []) this.settleTx(f.hash, false, f.resultCode);
   }
 
+  // The last will. `lease.deadlineMs` is when the signer quorum's hosting runs out unless the
+  // Nomad loop extends it — which it tries well before this point, so being this close means it
+  // could not (no EVR, no host answering, no ledger). Enter the wind-down with `lastWillSec` of
+  // hosting left; leave it once a full moment more than that is paid for again (hysteresis).
+  windDown() {
+    const { state, config } = this;
+    const lease = state.treasury.lease;
+    const peersConnected = () => [...this.connected].filter((pub) => state.peers[pub]).sort();
+    if (!config.lastWillSec) {
+      if (state.lastWill) { state.lastWill = null; this.note('last will disabled by configuration; back to normal operation'); }
+      return;
+    }
+    if (!lease) return;
+    const left = lease.deadlineMs - this.ts;
+    if (!state.lastWill) {
+      // A cluster's first rounds: its leases may be short by design (a fresh deployment) and
+      // the Nomad loop has not had its first go at extending them yet.
+      if (state.rounds < config.lastWillGraceRounds) return;
+      if (left > config.lastWillSec * 1000) return;
+      state.lastWill = { sinceLcl: this.lcl, sinceTs: this.ts, deadlineMs: lease.deadlineMs };
+      this.note(`last will: the signer quorum's hosting ends in ${Math.max(0, Math.round(left / 60000))} min and was not extended; winding down`);
+      for (const pub of peersConnected()) this.out(pub, this.lastWillNotice(pub));
+    } else if (left >= config.lastWillSec * 1000 + (lease.momentMs || DEFAULT_MOMENT_MS)) {
+      state.lastWill = null;
+      this.note('last will: hosting extended again; back to normal operation');
+      for (const pub of peersConnected()) this.out(pub, { t: 'last_will', active: false, deadline: lease.deadlineMs });
+    } else {
+      state.lastWill.deadlineMs = lease.deadlineMs; // keep telling peers the current deadline
+    }
+  }
+
+  lastWillNotice(pub) {
+    const p = this.state.peers[pub];
+    const home = payoutHome(this.state, pub);
+    const msg = { t: 'last_will', active: true, deadline: this.state.lastWill.deadlineMs, balance: p ? p.balance : '0', payoutTo: home ? home.address : null, payoutSource: home ? home.source : null };
+    if (!home) msg.hint = 'no payout address and no channel of yours is known: send settle_to to be paid out';
+    return msg;
+  }
+
+  payoutFailed(id, po, reason, hash, { countsAsFailure = true } = {}) {
+    const { state } = this;
+    const peer = state.peers[po.peer];
+    if (peer) {
+      // Money never left: give it back, and do not try again every round (fees are charged even
+      // for a rejected Payment — a destination that does not exist would drain the account).
+      // A submission that never happened cost nothing and is not the address's fault.
+      peer.balance = sstr(toSigned(peer.balance) + toBig(po.amount));
+      if (peer.pendingPayout === id) peer.pendingPayout = null;
+      if (countsAsFailure) {
+        peer.payoutFailures = (peer.payoutFailures || 0) + 1;
+        peer.payoutBackoffUntilLcl = this.lcl + payoutBackoff(peer.payoutFailures);
+      }
+    }
+    delete state.payouts[id];
+    const msg = { t: 'payout', status: 'failed', amt: po.amount, reason };
+    if (hash) msg.tx = hash;
+    if (peer) msg.retryAfterRounds = Math.max(0, (peer.payoutBackoffUntilLcl || 0) - this.lcl);
+    if (po.lastWill) msg.lastWill = true;
+    this.out(po.peer, msg);
+  }
+
   settleTx(hash, ok, resultCode) {
     const { state } = this;
     for (const [id, p] of Object.entries(state.payouts)) {
@@ -188,14 +327,14 @@ class RoundContext {
       const peer = state.peers[p.peer];
       if (ok) {
         p.status = 'validated';
-        this.out(p.peer, { t: 'payout', status: 'validated', amt: p.amount, tx: hash });
+        if (peer) { peer.payoutFailures = 0; peer.payoutBackoffUntilLcl = 0; if (peer.pendingPayout === id) peer.pendingPayout = null; }
+        const msg = { t: 'payout', status: 'validated', amt: p.amount, tx: hash };
+        if (p.lastWill) msg.lastWill = true;
+        this.out(p.peer, msg);
+        delete state.payouts[id];
       } else {
-        // Money never left: give it back.
-        if (peer) peer.balance = sstr(toSigned(peer.balance) + toBig(p.amount));
-        this.out(p.peer, { t: 'payout', status: 'failed', amt: p.amount, tx: hash, reason: resultCode });
+        this.payoutFailed(id, p, resultCode, hash);
       }
-      if (peer && peer.pendingPayout === id) peer.pendingPayout = null;
-      delete state.payouts[id];
     }
     for (const ch of Object.values(state.channels)) {
       if (ch.redeemPending && ch.redeemPending.hash === hash && !ok) ch.redeemPending = null;
@@ -285,6 +424,7 @@ class RoundContext {
     }
 
     state.stats.prepares += 1;
+    if (state.lastWill) return rej('F02', 'connector is winding down: its hosting ends soon and balances are being paid out');
     const from = state.peers[peer];
     if (from.inflight[id]) return rej('F00', 'duplicate packet id');
     if (!ilp.isValidAddress(prepare.destination)) return rej('F00', 'invalid destination address');
@@ -375,6 +515,7 @@ class RoundContext {
   handleClaim(peer, { channel, amount, signature }) {
     const { state } = this;
     const ack = (ok, extra) => this.out(peer, { t: 'claim_ack', ch: channel, amt: amount, ok, ...extra });
+    if (state.lastWill) return ack(false, { reason: 'connector is winding down', deadline: state.lastWill.deadlineMs });
     const ch = state.channels[channel];
     if (!ch) return ack(false, { reason: 'channel not (yet) observed on ledger' });
     if (ch.peer && ch.peer !== peer) return ack(false, { reason: 'channel is bound to another peer' });
@@ -387,10 +528,16 @@ class RoundContext {
     if (!claims.verifyClaim({ channel, amount, signature, publicKey: ch.publicKey })) return ack(false, { reason: 'bad signature' });
 
     const credit = amt - last;
-    ch.peer = ch.peer || peer;
+    const p = state.peers[peer];
+    if (!ch.peer) {
+      ch.peer = peer;
+      // The account this peer's money came from: where it goes back to if the peer never names a
+      // payout address and the connector has to wind down. Remembered here because the channel
+      // itself may be closed and gone from state by then.
+      if (!p.channelOwner && ch.owner) p.channelOwner = ch.owner;
+    }
     ch.lastClaimAmount = str(amt);
     ch.lastClaimSig = signature;
-    const p = state.peers[peer];
     p.balance = sstr(toSigned(p.balance) + credit);
     state.stats.claims += 1;
     ack(true, { credited: str(credit), balance: p.balance });
@@ -398,6 +545,10 @@ class RoundContext {
 
   handleSettleTo(peer, { address, tag }) {
     const p = this.state.peers[peer];
+    const sameTag = (p.payoutTag === null || p.payoutTag === undefined) ? (tag === null || tag === undefined) : p.payoutTag === tag;
+    if (p.payoutAddress !== address || !sameTag) {
+      p.payoutFailures = 0; p.payoutBackoffUntilLcl = 0; // a new address deserves a fresh attempt; the same one does not
+    }
     p.payoutAddress = address;
     p.payoutTag = tag;
     this.out(peer, { t: 'ack', of: 'settle_to', addr: address, tag });
@@ -436,72 +587,109 @@ class RoundContext {
     if (!config.masterAddress) return;
     const master = config.masterAddress;
     const fee = config.baseFeeDrops;
+    const winding = !!state.lastWill;
+    // Each intent is a multisign election over NPL and a ledger submission; a round that tries
+    // to do dozens would hit HotPocket's execution limit and die with its submissions
+    // unrecorded. Whatever does not fit is planned in the next round — the order is
+    // deterministic, so every node defers the same ones.
+    const room = () => this.intents.length < MAX_INTENTS_PER_ROUND;
 
-    // 1. Redeem channels: on threshold, or as soon as the owner starts closing them.
-    for (const [id, ch] of Object.entries(state.channels)) {
-      if (ch.redeemPending && this.lcl - (ch.redeemPending.lcl || this.lcl) > REDEEM_RETRY_ROUNDS) {
-        this.note(`channel ${id}: redemption ${ch.redeemPending.intentId} never confirmed; retrying`);
-        ch.redeemPending = null;
-      }
-      if (ch.redeemPending) continue;
-      const unredeemed = toBig(ch.lastClaimAmount) - toBig(ch.ledgerBalance);
-      const closing = !!ch.expiration;
-      if (unredeemed <= 0n) {
-        // Nothing left to redeem but the owner wants out: close it for them right away (the
-        // destination's tfClose is immediate) instead of making them wait out the settle delay.
-        if (ch.closePending && this.lcl - (ch.closePending.lcl || this.lcl) > REDEEM_RETRY_ROUNDS) ch.closePending = null;
-        if (closing && !ch.closePending) {
-          const intentId = nextId(state, 'c');
-          ch.closePending = { intentId, hash: null, lcl: this.lcl };
-          this.intents.push({ id: intentId, kind: 'close', channel: id, tx: { TransactionType: 'PaymentChannelClaim', Account: master, Channel: id, Flags: TF_CLOSE, Fee: fee } });
+    const ledger = state.treasury.ledgerIndex || 0;
+
+    // 1. Redeem channels: on threshold, as soon as the owner starts closing them — and all of
+    //    them, whatever the amount, while winding down (a claim not on the ledger dies with us).
+    //    Closing channels first: their claims die with the settle delay, the others can wait.
+    const channels = Object.entries(state.channels).sort(([a], [b]) => (a < b ? -1 : 1));
+    const bareCloses = [];
+    for (const closingFirst of [true, false]) {
+      for (const [id, ch] of channels) {
+        if (ch.redeemPending && this.lcl - (ch.redeemPending.lcl || this.lcl) > REDEEM_RETRY_ROUNDS) {
+          this.note(`channel ${id}: redemption ${ch.redeemPending.intentId} never confirmed; retrying`);
+          ch.redeemPending = null;
         }
-        continue;
+        if (ch.redeemPending) continue;
+        const unredeemed = toBig(ch.lastClaimAmount) - toBig(ch.ledgerBalance);
+        const closing = !!ch.expiration;
+        if (closing !== closingFirst) continue;
+        if (unredeemed <= 0n) {
+          // Nothing left to redeem but the owner wants out: close it for them right away (the
+          // destination's tfClose is immediate) instead of making them wait out the settle delay.
+          if (ch.closePending && this.lcl - (ch.closePending.lcl || this.lcl) > REDEEM_RETRY_ROUNDS) ch.closePending = null;
+          if (closing && !ch.closePending) bareCloses.push([id, ch]);
+          continue;
+        }
+        if (!closing && !winding && unredeemed < toBig(config.redeemThresholdDrops)) continue;
+        if (!room()) continue;
+        const intentId = nextId(state, 'r');
+        ch.redeemPending = { intentId, amount: ch.lastClaimAmount, hash: null, lcl: this.lcl, ledger };
+        const tx = {
+          TransactionType: 'PaymentChannelClaim', Account: master, Channel: id,
+          Balance: ch.lastClaimAmount, Amount: ch.lastClaimAmount,
+          Signature: ch.lastClaimSig, PublicKey: ch.publicKey, Fee: fee, Memos: intentMemo(intentId),
+        };
+        // The owner asked to close: as the destination we can close it at once (tfClose), which
+        // returns the unclaimed remainder to the owner without waiting out the settle delay.
+        if (closing) tx.Flags = TF_CLOSE;
+        this.intents.push({ id: intentId, kind: 'redeem', channel: id, tx });
       }
-      if (!closing && unredeemed < toBig(config.redeemThresholdDrops)) continue;
-      const intentId = nextId(state, 'r');
-      ch.redeemPending = { intentId, amount: ch.lastClaimAmount, hash: null, lcl: this.lcl };
-      const tx = {
-        TransactionType: 'PaymentChannelClaim', Account: master, Channel: id,
-        Balance: ch.lastClaimAmount, Amount: ch.lastClaimAmount,
-        Signature: ch.lastClaimSig, PublicKey: ch.publicKey, Fee: fee,
-      };
-      // The owner asked to close: as the destination we can close it at once (tfClose), which
-      // returns the unclaimed remainder to the owner without waiting out the settle delay.
-      if (closing) tx.Flags = TF_CLOSE;
-      this.intents.push({ id: intentId, kind: 'redeem', channel: id, tx });
     }
 
-    // 2. Pay peers out, but only from funds that are really on the ledger.
-    let available = toBig(state.treasury.masterBalance) - toBig(config.reserveDrops);
+    // 2. Pay peers out, but only from funds that are really on the ledger. Normally on the
+    //    threshold or on request, to the registered address; while winding down, everyone with
+    //    a known home, whatever the amount (above dust), each time a balance appears — redeemed
+    //    claims and released holds included — for as long as the cluster can still sign. The
+    //    wind-down keeps back only the ledger's own reserve, not the operating buffer: the
+    //    buffer is peers' money too once there is no tomorrow to buffer for.
+    const reserve = winding ? bigMin(toBig(config.reserveDrops), toBig(config.lastWillReserveDrops)) : toBig(config.reserveDrops);
+    let available = toBig(state.treasury.masterBalance) - reserve;
     for (const po of Object.values(state.payouts)) available -= toBig(po.amount);
     const peers = Object.keys(state.peers).sort(); // deterministic order
     for (const pub of peers) {
+      if (!room()) break;
       const p = state.peers[pub];
-      if (!p.payoutAddress || p.pendingPayout) continue;
+      if (p.pendingPayout || (p.payoutBackoffUntilLcl || 0) > this.lcl) continue;
       const bal = toSigned(p.balance);
-      const due = bal >= toBig(config.payoutThresholdDrops) || (p.withdrawRequested && bal >= toBig(config.minPayoutDrops));
-      if (!due) continue;
+      let home = p.payoutAddress ? { address: p.payoutAddress, tag: p.payoutTag } : null;
+      if (winding) {
+        home = home || payoutHome(state, pub);
+        if (!home || bal < toBig(config.lastWillMinDrops)) continue;
+      } else {
+        const due = bal >= toBig(config.payoutThresholdDrops) || (p.withdrawRequested && bal >= toBig(config.minPayoutDrops));
+        if (!home || !due) continue;
+      }
       if (bal > available) { this.note(`payout to ${pub} deferred: waiting for redemptions`); continue; }
       const intentId = nextId(state, 'p');
       p.balance = '0';
       p.withdrawRequested = false;
       p.pendingPayout = intentId;
-      state.payouts[intentId] = { peer: pub, amount: str(bal), status: 'planned', txHash: null, lcl: this.lcl };
+      const tag = home.tag !== null && home.tag !== undefined ? home.tag : null;
+      state.payouts[intentId] = { peer: pub, amount: str(bal), destination: home.address, tag, status: 'planned', txHash: null, lcl: this.lcl, plannedLedger: ledger, lastWill: winding };
       available -= bal;
-      const tx = { TransactionType: 'Payment', Account: master, Destination: p.payoutAddress, Amount: str(bal), Fee: fee };
-      if (p.payoutTag !== null && p.payoutTag !== undefined) tx.DestinationTag = p.payoutTag;
+      const tx = { TransactionType: 'Payment', Account: master, Destination: home.address, Amount: str(bal), Fee: fee, Memos: intentMemo(intentId) };
+      if (tag !== null) tx.DestinationTag = tag;
       this.intents.push({ id: intentId, kind: 'payout', peer: pub, tx });
     }
 
-    // 3. Treasury: keep enough EVR to pay the hosts, bought with earned XAH on the DEX.
+    // 3. Channels with nothing left to redeem whose owners want out: close them (immediate for
+    //    the destination). Last among the channel work: nothing is at stake but the owner's wait.
+    for (const [id, ch] of bareCloses) {
+      if (!room()) break;
+      const intentId = nextId(state, 'c');
+      ch.closePending = { intentId, hash: null, lcl: this.lcl, ledger };
+      this.intents.push({ id: intentId, kind: 'close', channel: id, tx: { TransactionType: 'PaymentChannelClaim', Account: master, Channel: id, Flags: TF_CLOSE, Fee: fee, Memos: intentMemo(intentId) } });
+    }
+
+    // 4. Treasury: keep enough EVR to pay the hosts, bought with earned XAH on the DEX.
     const t = state.treasury;
-    const offerAllowed = !t.offerPending && (t.offerBackoffUntilLcl || 0) <= this.lcl;
+    // An offer planned by a round that died before recording its submission: let it go after a while.
+    if (t.offerPending && !t.offerPending.hash && this.lcl - (t.offerPending.lcl || this.lcl) > OFFER_BACKOFF_ROUNDS) t.offerPending = null;
+    const offerAllowed = !t.offerPending && (t.offerBackoffUntilLcl || 0) <= this.lcl && room();
     if (offerAllowed && Number(t.evrBalance) < Number(config.evrReserve)) {
       const equity = toBig(t.masterBalance) - toBig(config.reserveDrops) - this.liabilities();
       const spend = toBig(config.evrTopUpXahDrops);
       if (equity >= spend) {
         const intentId = nextId(state, 'o');
-        t.offerPending = { intentId, hash: null, spend: str(spend) };
+        t.offerPending = { intentId, hash: null, spend: str(spend), lcl: this.lcl, ledger };
         this.intents.push({
           id: intentId, kind: 'evr-topup',
           tx: {
@@ -509,6 +697,7 @@ class RoundContext {
             TakerGets: str(spend), // we give XAH
             TakerPays: { currency: 'EVR', issuer: config.evrIssuer, value: String(config.evrTopUpMinEvr) },
             Flags: 0x00080000, // tfImmediateOrCancel: fill what the book has, never rest an order
+            Memos: intentMemo(intentId),
           },
         });
       } else {
@@ -523,14 +712,13 @@ class RoundContext {
     for (const r of results || []) {
       const po = state.payouts[r.id];
       if (po) {
-        const peer = state.peers[po.peer];
         if (r.ok) {
           po.status = 'submitted'; po.txHash = r.hash;
-          this.out(po.peer, { t: 'payout', status: 'submitted', amt: po.amount, tx: r.hash });
+          const msg = { t: 'payout', status: 'submitted', amt: po.amount, tx: r.hash };
+          if (po.lastWill) msg.lastWill = true;
+          this.out(po.peer, msg);
         } else {
-          if (peer) { peer.balance = sstr(toSigned(peer.balance) + toBig(po.amount)); peer.pendingPayout = null; }
-          delete state.payouts[r.id];
-          this.out(po.peer, { t: 'payout', status: 'failed', amt: po.amount, reason: r.error || r.resultCode });
+          this.payoutFailed(r.id, po, r.error || r.resultCode, null);
         }
         continue;
       }
@@ -560,6 +748,7 @@ function processRound(state, config, input) {
   const rc = new RoundContext(state, config, input);
   state.rounds += 1;
   rc.applyFacts(input.facts);
+  rc.windDown();
   rc.sweepExpired();
   for (const { peer, raw } of input.inputs || []) rc.handleInput(peer, raw);
   rc.sweepDisconnected();
@@ -582,11 +771,14 @@ function handleReadRequest(state, config, peer, raw) {
         minExpiryWindowMs: config.minExpiryWindowMs, masterAddress: config.masterAddress,
         redeemThresholdDrops: config.redeemThresholdDrops, payoutThresholdDrops: config.payoutThresholdDrops,
         minPayoutDrops: config.minPayoutDrops, rounds: state.rounds, stats: state.stats,
+        lastWillSec: config.lastWillSec, winding: !!state.lastWill, lastWill: state.lastWill || null,
+        lease: state.treasury.lease || null, leaseNote: state.treasury.leaseNote || null,
       };
     case 'balance':
       return {
         t: 'balance', balance: p ? p.balance : '0', held: p ? p.held : '0',
         payoutAddress: p ? p.payoutAddress : null, pendingPayout: p && p.pendingPayout ? state.payouts[p.pendingPayout] : null,
+        lastWillTo: payoutHome(state, peer),
       };
     case 'channels': {
       const mine = Object.entries(state.channels).filter(([, c]) => c.peer === peer || (!c.peer && c.owner === (p && p.payoutAddress)));
@@ -598,5 +790,6 @@ function handleReadRequest(state, config, peer, raw) {
 }
 
 module.exports = {
-  DEFAULT_CONFIG, makeConfig, initialState, processRound, handleReadRequest, peerAddress, STATE_VERSION,
+  DEFAULT_CONFIG, makeConfig, initialState, processRound, handleReadRequest, peerAddress, payoutHome,
+  intentMemo, intentIdFromMemos, MEMO_TYPE, STATE_VERSION,
 };

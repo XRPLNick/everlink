@@ -12,7 +12,7 @@ the reasoning behind the design is in the [design note](design.html).
 | [Getting started](getting-started.md) | From zero to a paid STREAM payment: identity, connecting, funding with a channel claim, paying, receiving, getting paid out. Complete example. |
 | [Peer protocol](peer-protocol.md) | The JSON messages over the HotPocket user channel, their fields and limits, read requests, and every ILP rejection code the connector emits. |
 | [Plugin API](plugin-api.md) | `ilp-plugin-hotpocket` reference: constructor, methods, events, helpers. |
-| [Money: funding, fees, settlement](money.md) | How balances, holds, claims, redemptions and payouts work; what a peer risks and what the connector risks. |
+| [Money: funding, fees, settlement](money.md) | How balances, holds, claims, redemptions and payouts work; what a peer risks and what the connector risks; the last will that pays everyone out if the cluster's hosting lapses. |
 | [Configuration](configuration.md) | Every key in `everlink.config.json`, its default and its effect — the numbers a peer sees in the `info` read request. |
 | [Troubleshooting](troubleshooting.md) | The errors and rejections you will meet, what they mean and what to do. |
 | [Glossary](glossary.md) | HotPocket, Evernode, ILP and Xahau terms used throughout. |

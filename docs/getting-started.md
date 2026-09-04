@@ -166,7 +166,11 @@ configuration, 0.10 % by default) plus `feeFlat` drops (0 by default), rounded u
 ## 5. Receive
 
 A receiver is the same plugin with a STREAM server on top. To be paid out on-ledger it also
-needs a payout address; set it any time before the balance reaches the payout threshold.
+needs a payout address; set it any time before the balance reaches the payout threshold — and
+preferably first thing, because it is also where the connector's
+[last will](money.md#if-the-cluster-dies-the-last-will) sends your balance if the cluster
+ever has to wind itself down (a payer without one is refunded to the account its channel came
+from; a receiver without one cannot be paid at all).
 
 ```js
 const { createServer } = require('ilp-protocol-stream');

@@ -19,13 +19,18 @@
     "evrReserve": "50",
     "evrTopUpXahDrops": "2000000",
     "evrTopUpMinEvr": "1",
-    "minSettleDelaySec": 600
+    "minSettleDelaySec": 600,
+    "lastWillSec": 1800,
+    "lastWillMinDrops": "1000",
+    "lastWillReserveDrops": "3000000",
+    "lastWillGraceRounds": 100
   },
   "xahau": {
     "enabled": true,
     "network": "testnet",
     "rippleServer": "<XAHAU_SERVER>",
-    "factsEvery": 3
+    "factsEvery": 3,
+    "momentSec": 3600
   },
   "nomad": {
     "targetNodeCount": 3,

@@ -36,6 +36,9 @@ async function probe(node) {
     const adv = s2.ledgerSeqNo > s1.ledgerSeqNo;
     say(`${node.domain}:${node.userPort} ${node.host}  connected in ${Date.now() - t0} ms; hp ${s2.hpVersion}; ledger ${s1.ledgerSeqNo} -> ${s2.ledgerSeqNo} after 7 s (${adv ? 'ADVANCING' : 'STUCK'}); vote ${s2.voteStatus}; unl ${s2.currentUnl.length} [${s2.currentUnl.map((u) => String(u).slice(0, 10)).join(' ')}]; peers ${(s2.peers || []).length}`);
     say(`  contract: ${info && info.connectorAddress ? `${info.connectorAddress} master ${info.masterAddress} rounds ${info.rounds} stats ${JSON.stringify(info.stats)}` : JSON.stringify(info)}`);
+    // Contracts built since the last will exists report their hosting deadline; older ones have no `lease` field.
+    if (info && info.lease) say(`  hosting: quorum ${info.lease.quorum} of ${info.lease.signers} paid until ${new Date(info.lease.deadlineMs).toISOString()} (${Math.round((info.lease.deadlineMs - Date.now()) / 60000)} min)${info.winding ? ` WINDING DOWN since lcl ${info.lastWill.sinceLcl}` : ''}${info.leaseNote ? ` [${info.leaseNote}]` : ''}`);
+    else if (info && info.leaseNote) say(`  hosting: no lease fact (${info.leaseNote})`);
     if (diag && diag.last) {
       const l = diag.last;
       say(`  last round lcl ${l.lcl} at ${l.startedAt}: ${l.totalMs} ms (${Object.entries(l.phases).map(([k, v]) => `${k} ${v}`).join(', ')}); inputs ${l.inputs}; facts ${l.facts ? `ledger ${l.facts.ledgerIndex} balance ${l.facts.masterBalance} EVR ${l.facts.evrBalance} channels ${l.facts.channels}` : 'none'}; intents ${JSON.stringify(l.intents)}; errors ${JSON.stringify(l.errors)}`);

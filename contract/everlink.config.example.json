@@ -17,13 +17,18 @@
     "evrIssuer": "rEvernodee8dJLaFsujS6q1EiXvZYmHXr8",
     "evrReserve": "20",
     "evrTopUpXahDrops": "5000000",
-    "evrTopUpMinEvr": "10"
+    "evrTopUpMinEvr": "10",
+    "lastWillSec": 1800,
+    "lastWillMinDrops": "1000",
+    "lastWillReserveDrops": "3000000",
+    "lastWillGraceRounds": 100
   },
   "xahau": {
     "enabled": true,
     "network": "mainnet",
     "rippleServer": null,
-    "factsEvery": 5
+    "factsEvery": 5,
+    "momentSec": 3600
   },
   "nomad": {
     "targetNodeCount": 5,

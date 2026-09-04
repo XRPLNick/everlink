@@ -106,7 +106,19 @@ in the node's notes); the payout is planned as soon as a redemption lands. Wait 
 
 **`payout failed` with a `tec…` or `tem…` code** — the Xahau transaction was rejected (for
 example an unfunded destination below reserve, `tecNO_DST_INSUF_XRP`); the amount is back in
-your balance. Fix the destination and `withdraw()` again.
+your balance. The connector waits before trying again (`retryAfterRounds`: 20 rounds, doubling
+per failure); `setPayoutAddress` with a different address clears the wait. Fix the destination and
+`withdraw()` again. `reason: submission lost` means the round that planned it died before the
+transaction went out; nothing was sent, the balance is back, and it is planned again at once (no
+backoff).
+
+**`F02 connector is winding down` / `claim_ack … connector is winding down` / a `last_will`
+event** — the cluster's hosting is about to lapse and it could not extend it, so it is executing
+its [last will](money.md#if-the-cluster-dies-the-last-will): no new packets or claims, every
+balance paid out. Yours goes to your payout address, or to the account that owns the channel you
+funded from; if you have neither, set a payout address now — it is honoured within a round for
+as long as the cluster can still sign. `getInfo()` shows `winding`, the `lease` deadline and, once
+it is over, `winding: false`.
 
 **`plugin is disconnected` / `plugin not connected` right after a payment** — `ilp-protocol-stream`
 disconnects the plugin when the connection ends (`conn.end()`) or the server closes. Call

@@ -36,6 +36,16 @@ Peers can read the values that matter to them with the `info` read request; they
 | `evrReserve` | `"20"` | `"0.01"` | Keep at least this many EVR for lease payments; below it the treasury buys more. |
 | `evrTopUpXahDrops` | `"5000000"` | `"1000000"` | Most XAH to spend per DEX top-up. |
 | `evrTopUpMinEvr` | `"10"` | `"1"` | Least EVR to accept for it (limit price of the immediate-or-cancel offer). |
+| `lastWillSec` *info* | `1800` | `1800` | The [last will](money.md#if-the-cluster-dies-the-last-will): when the signer quorum's hosting is paid for this many seconds or less and has not been extended, stop accepting Prepares and claims, redeem every channel and pay every peer out. Normal operation resumes once a full moment more than this is paid for again. `0` disables. Must stay below the point at which Nomad starts extending — half of `lifeIncrMomentMinLimit` moments before *its* expiry estimate, which can run up to a moment plus the fifteen-minute timestamp slack ahead of the fact's deadline: with `4`, 1 800 s leaves the Nomad loop at least a quarter of an hour of attempts before the last will steps in, usually far more; above 2 700 s the last will could fire before Nomad's first attempt. Keep it at 1 800 s or below. |
+| `lastWillMinDrops` | `"1000"` | `"1000"` | Balances below this (0.001 XAH) are left in the account by the last will rather than paid out at a loss to the fee. |
+| `lastWillReserveDrops` | `"3000000"` | `"3000000"` | What the last will keeps back instead of `reserveDrops`: the ledger's own reserve for the account (on Xahau 1 XAH plus 0.2 XAH per owned object — SignerList, EVR trust line, lease tokens). Set it too low and the final payouts fail (`tecUNFUNDED_PAYMENT`, refunded and retried with backoff); too high and that much of the peers' money stays behind. |
+| `lastWillGraceRounds` | `100` | `100` | No wind-down in a cluster's first this-many rounds: a fresh deployment's leases are short by design and the Nomad loop extends them within minutes. |
+
+Failed payouts back off: 20 rounds after the first failure, doubling per failure, at most 2 000
+rounds; a `settle_to` with a different address or tag, or a successful payout, resets it. At most
+four transactions are submitted per round, closing channels first. A transaction the cluster
+submitted but cannot find on the ledger is given up after 200 ledgers. None of this is
+configurable.
 
 ## `xahau`
 
@@ -44,8 +54,9 @@ Peers can read the values that matter to them with the `info` read request; they
 | `enabled` | `true` | `false` runs the connector without a ledger: no facts, no settlement, `masterAddress` forced to `null`. Used by the local development cluster together with `devFaucetDrops`. |
 | `network` | `mainnet` | `mainnet` or `testnet` (`devnet` is accepted but has no network id yet): selects the Xahau network id (21337 / 21338) and the built-in ledger definitions. |
 | `rippleServer` | `null` (network default) | WebSocket endpoint the nodes query, e.g. `wss://xahau.network`. |
-| `factsEvery` | `5` | Observe the ledger (balances, channels, EVR line, transaction results) and vote on it every this many rounds; also whenever a settlement is pending. Deployed: 3. |
+| `factsEvery` | `5` | Observe the ledger (balances, channels, EVR line, transaction results, the lease fact) and vote on it every this many rounds; also whenever a settlement is pending. Deployed: 3. |
 | `nomadEvery` | `10` | Run everpocket's Nomad housekeeping every this many rounds. |
+| `momentSec` | `3600` | Length of an Evernode moment, used for the lease fact only until the Nomad phase has read the live value (and the moment clock's base) from the Evernode registry. Each node caches that next to its diagnostics file, outside consensus state, votes it with the facts, and the core keeps the agreed value in state (`clock`), which nodes without a cache of their own then use — so every node derives the same fact. |
 
 ## `nomad`
 

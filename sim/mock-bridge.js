@@ -32,9 +32,20 @@ class MockBridge {
       channelsComplete: true,
       validatedTxs: seen.filter((v) => v.resultCode === 'tesSUCCESS').map((v) => ({ hash: v.hash, resultCode: v.resultCode })),
       failedTxs: seen.filter((v) => v.resultCode !== 'tesSUCCESS').map((v) => ({ hash: v.hash, resultCode: v.resultCode })),
+      lease: this._lease(ctx),
     };
     const votes = await busFor(ctx).vote(`facts:${ctx.lclSeqNo}`, local, { expected: ctx.unl.count(), timeoutMs: this.voteTimeoutMs });
     return majority(votes);
+  }
+
+  // The lease fact, as the production bridge derives it from cluster.json and the SignerList:
+  // when the hosting of a signing quorum (a majority of the nodes here) runs out.
+  _lease(ctx) {
+    const leases = [...this.mock.leases.values()];
+    if (!leases.length) return null;
+    const expiries = leases.map((l) => l.expiresAt).sort((a, b) => b - a);
+    const quorum = Math.floor(leases.length / 2) + 1;
+    return { deadlineMs: expiries[quorum - 1], quorum, signers: leases.length, momentMs: leases[0].momentMs, aligned: true, expiries, asOf: ctx.timestamp };
   }
 
   async submit(ctx, intents) {
@@ -52,8 +63,9 @@ class MockBridge {
     for (const [nodePub, lease] of m.leases) {
       const remainingMoments = (lease.expiresAt - ctx.timestamp) / lease.momentMs;
       if (remainingMoments < this.leaseMomentsAhead) {
-        // dedupe key includes the expiry so every node extends the same lease exactly once
-        const r = m.extendLease(this.master, nodePub, this.leaseExtendMoments, `lease:${nodePub}:${lease.expiresAt}`);
+        // dedupe key includes the expiry and the round so every node extends the same lease
+        // exactly once per round — and, like everpocket's queued operation, tries again next round
+        const r = m.extendLease(this.master, nodePub, this.leaseExtendMoments, `lease:${nodePub}:${lease.expiresAt}:${ctx.lclSeqNo}`);
         if (r.resultCode !== 'tesSUCCESS' && this.onLeaseProblem) this.onLeaseProblem(nodePub, r.resultCode);
       }
     }

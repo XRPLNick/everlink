@@ -76,6 +76,25 @@ spent twice; if the transaction fails, or is rejected on submission, the amount 
 you get a `payout … failed` message. You see `submitted` (with the transaction hash) when the
 cluster's nodes have co-signed and submitted it, and `validated` when the ledger confirms it.
 
+A payout that fails is not retried every round — the ledger charges its fee even for a
+rejected Payment, so an address that cannot receive (an account that does not exist, say) would
+otherwise drain the connector three seconds at a time. The retry waits 20 rounds after the first
+failure and doubles each time, up to 2 000 rounds (about 100 minutes); `retryAfterRounds` in the
+`failed` message says how long. A `settle_to` naming a different address or tag resets the wait,
+and so does a payout that succeeds.
+
+Every transaction the cluster submits names the intent behind it in a memo (`everlink/intent`,
+e.g. `p12`). The state is saved before the transactions of a round go out, so if a node's process
+dies while they are in flight — a hung ledger connection, HotPocket's execution limit — the next
+round finds the payouts still "planned" with no hash and asks the ledger whether they went out:
+a Payment from the connector's account to exactly the planned destination and amount, carrying
+that memo, is recorded as the payout's transaction; nothing of the kind after 200 ledgers means it
+was never submitted, and the balance is refunded (`payout … failed`, reason `submission lost`, no
+backoff — the address did nothing wrong). A transaction whose hash the cluster recorded but the
+ledger library did not is likewise looked up on the ledger before it is ever called `expired`.
+At most four transactions are submitted per round, closing channels first; anything further waits
+a round, in the same order on every node.
+
 The mainnet run's payout: 0.996499 XAH to Bob, 3 signers, fee 60 drops, ledger 25,528,756 —
 see [proof.md](proof.md).
 
@@ -107,6 +126,68 @@ seed.
 **A cluster outage longer than a channel's settle delay** could let a channel close with claims
 unredeemed. The connector refuses channels with short settle delays and redeems the moment a
 close starts, but cannot redeem while it is down.
+
+**The cluster dying** is covered by its last will, below — provided it dies slowly enough to
+notice. Every node lost inside a single half hour, or a bug that stalls consensus, would leave
+the account frozen with whatever it held, because nothing but the nodes' signer keys can move it.
+
+## If the cluster dies: the last will
+
+Nobody holds a key to the connector's account: after the master key was disabled, only the
+cluster's signer quorum (2 of the 3 nodes on the mainnet run) can sign for it. The nodes are
+leased Evernode instances, paid for a number of *moments* (hours) at a time from that same
+account, and the cluster extends its own leases as they run down. Should it stop being able to
+— no EVR left and no XAH to buy some, no host answering, no ledger connection — the leases end,
+the nodes are destroyed, and the account is frozen for good with everyone's balances in it.
+
+So the contract carries a last will, executed by the cluster itself while it can still sign:
+
+1. Every observation of the ledger carries a **lease fact**: the consensus time at which the
+   signer quorum's hosting is no longer paid for, computed on every node from everpocket's
+   cluster record (part of the consensus state), the account's SignerList, and Evernode's
+   moment clock — and voted on like every other fact. It is deliberately pessimistic. A lease
+   bought in moment *m* for *n* moments is taken to end when moment *m + n* begins, which is
+   when a host may act and up to an hour before everpocket's own estimate; and because the
+   record's timestamp is written minutes after the purchase (when the instance first answered),
+   the purchase is placed a quarter of an hour before it, which can move a node's expiry another
+   moment earlier. The one assumption: that gap is never more than fifteen minutes. Until a vote
+   has carried the moment clock, a cruder bound is used (everpocket's estimate less a moment and
+   the slack); a record with a signer node whose lease data is missing gives no fact at all,
+   and the last known one stands.
+2. The Nomad loop tries to extend a lease half of `lifeIncrMomentMinLimit` moments before *its*
+   estimate of expiry — two moments, as deployed. If the fact still shows **`lastWillSec` or
+   less** (30 minutes by default) — meaning the extension has been failing for at least a
+   quarter of an hour, usually an hour or more — the connector **winds down**, except in a
+   cluster's first `lastWillGraceRounds` (100 rounds, five minutes), when short leases are
+   normal and the loop has not had its first go:
+   - new Prepares are rejected with `F02 connector is winding down …`, new claims with
+     `claim_ack … reason: connector is winding down` (ILDCP still answers, `settle_to` still works);
+   - every channel with claims not yet redeemed is redeemed, whatever the amount;
+   - every peer's balance is paid out, whatever the amount above `lastWillMinDrops` (0.001 XAH:
+     smaller balances would cost more in fees than they deliver), as funds arrive on the ledger,
+     keeping back only the ledger's own reserve for the account (`lastWillReserveDrops`, 3 XAH)
+     rather than the operating reserve — to the address the peer registered with `settle_to`,
+     or, if it never did, **back to the account that owned the channel it first funded itself
+     from** (remembered when the channel was bound, so a closed channel still counts). Payouts
+     made this way carry `lastWill: true`. A peer with neither keeps its balance in the account
+     until it sends a `settle_to`, which is honoured in the same round. Four transactions per
+     round, so a busy connector takes a few rounds to pay everyone; the order is by peer key and
+     the same on every node.
+   - every connected peer gets a `last_will` output saying so, with the deadline, its balance and
+     where the money is going; `info` shows `winding: true` and the lease fact to anyone who asks.
+     A peer that wants its money somewhere other than the channel it funded from should have
+     said so beforehand: the notice and the first payouts go out in the same round.
+3. Should the hosting be paid for again after all — a top-up, a host coming back — normal
+   operation resumes once a full moment more than `lastWillSec` is paid for (peers hear
+   `last_will … active: false`); nothing already paid out is asked back, and peers simply fund
+   again.
+
+What the last will does not do: it leaves the connector's own float (its fees and the ledger
+reserve) in the account, since no one owns it; it cannot help a peer whose money it never knew
+where to send; it cannot pay out more than is on the ledger (a shortfall is deferred, and dies
+with the cluster if nothing arrives); and it cannot run if the cluster dies faster than its clock
+can see. Set a payout address early — it is where your money goes when the connector cannot ask
+you.
 
 ## Where the fees go
 

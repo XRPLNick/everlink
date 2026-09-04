@@ -21,7 +21,7 @@ co-signed by its three nodes — buying itself nineteen more hours of hosting fo
 account's master key was disabled (`AccountSet asfDisableMaster`, ledger 25,544,790): the
 cluster's 2-of-3 signer list is now the only thing that can move funds in it — nobody runs
 the connector, and nobody controls its account. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
-end-to-end are tested (`npm test`, 20 tests); the local `hpdevkit` run is in `deploy/local/`,
+end-to-end are tested (`npm test`, 24 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
 [docs/proof.md](docs/proof.md), together with a packet-level trace of a payment through the
@@ -69,6 +69,11 @@ plugin API, the money model, configuration, troubleshooting — is in [docs/](do
 * **Nothing lent.** A peer can only send what it has prepaid (plus a 0.01 XAH probe credit so
   receivers can run STREAM's rate probes). A peer's exposure to the connector is bounded by
   the payout threshold; the connector's custodial exposure is its float plus unredeemed claims.
+* **A last will.** Every ledger observation carries the time at which the signer quorum's
+  Evernode leases run out. If that comes within half an hour and the cluster has not managed to
+  extend them, it stops taking money, redeems every claim and pays every peer out — to its
+  payout address, or back to the account that funded its channel — while its nodes can still
+  sign. Not exercised on mainnet; proven in the simulator ([docs/money.md](docs/money.md#if-the-cluster-dies-the-last-will)).
 
 ## Layout
 
@@ -96,7 +101,7 @@ docs/                documentation (start at docs/README.md), design document, p
 | `{"t":"withdraw"}` | pay out now (≥ `minPayoutDrops`) |
 | read requests `info` / `balance` / `channels` | answered from state, no mutation |
 
-Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `ack`, `err`.
+Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `last_will`, `ack`, `err`.
 
 ## Design choices worth knowing
 
@@ -120,11 +125,12 @@ Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `ack`, `err`
 * Single asset (XAH). Multi-asset routing needs per-asset ledgers and a rate source.
 * One channel per peer direction is assumed; channel key rotation is not handled.
 * everpocket's own bookkeeping (`transactions.json`) is written from unvoted ledger queries.
-* No backstop if the cluster dies. With the master key retired, an account whose cluster stops
-  — all nodes lost inside one lease window, a bug that stalls consensus, or the EVR running out —
-  is locked for good, peers' credit included. The cluster extends its own leases (proven on
-  mainnet) and can replace dead nodes (everpocket Nomad, not yet exercised), but there is no
-  last-will sweep of peers' balances to their payout addresses and no hand-over to a successor.
+* A cluster that dies fast takes the account with it. With the master key retired, nothing but
+  the nodes' signer keys can move funds. The last will covers the slow death — leases that cannot
+  be extended — by paying everyone out while a quorum can still sign; it cannot cover all nodes
+  lost inside one half hour, or a bug that stalls consensus, and it cannot pay a peer that never
+  gave it an address or a channel. There is no hand-over to a successor cluster. The mainnet
+  cluster runs the code from before the last will existed, and cannot be upgraded.
 * Peers' HotPocket identities are their account at the connector: lose the key, lose the credit.
 
 ## License

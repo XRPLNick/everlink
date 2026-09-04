@@ -57,11 +57,23 @@ prefix plus the peer's HotPocket public key; anything after a further dot is pas
 **Intent** — A transaction the connector's core wants signed (a redemption, a payout, a close, an
 EVR top-up). The bridge has the cluster multisign and submit it; the result comes back as a fact.
 
+**Last will** — What the connector does when the cluster's own hosting is about to lapse and
+could not be extended: stop taking Prepares and claims, redeem every channel, pay every peer's
+balance to its payout address or back to the account that funded its channel — while the nodes
+can still sign. Driven by the lease fact; see [money.md](money.md#if-the-cluster-dies-the-last-will).
+
+**Lease fact** — Part of every ledger observation: the consensus time at which the signer
+quorum's Evernode leases are no longer paid for, computed from everpocket's cluster record, the
+account's SignerList and Evernode's moment clock, and voted on like every other fact. Shown as
+`lease` in the `info` read request.
+
 **Master account / cluster account** — The Xahau account the cluster controls through its
 SignerList: destination of peers' channels, source of payouts and lease payments. `masterAddress`
 in the configuration and in the `info` read request.
 
-**Moment** — Evernode's billing period for leases, 3600 seconds (an hour) on mainnet.
+**Moment** — Evernode's billing period for leases, 3600 seconds (an hour) on mainnet. Leases
+are counted in whole moments from the one the instance was created in; the moment clock's base
+and length come from the Evernode registry.
 
 **Nomad** — everpocket's self-managing cluster model: the contract itself extends leases,
 replaces failed nodes and adds new signers from the master account. The `nomad` configuration

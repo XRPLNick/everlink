@@ -96,6 +96,76 @@ test('3-node cluster: claim, route, redeem, pay out, and keep the hosts paid', a
   assert.equal(cluster.forked, false);
 });
 
+test('3-node cluster: when the hosts can no longer be paid, the last will pays everyone out; a rescue reverses it', async (t) => {
+  const sim = createSimConnector({
+    nodeCount: 3, roundTimeMs: 30, factsEvery: 1,
+    // evrReserve 0: the treasury never buys EVR, so nothing but our own hand can rescue the hosting.
+    config: { feeBps: 100, minExpiryWindowMs: 500, redeemThresholdDrops: '2000000', payoutThresholdDrops: '1500000', reserveDrops: '20000000', evrReserve: '0', lastWillGraceRounds: 5 },
+  });
+  const { cluster, mock, master } = sim;
+  t.after(() => cluster.stop());
+  const errors = [];
+  cluster.on('error', (e) => errors.push(e));
+
+  const aliceKeys = H.channelKeys();
+  mock.fund(aliceKeys.address, 100_000_000n);
+  const channel = mock.createChannel({ account: aliceKeys.address, destination: master, amount: 5_000_000n, publicKey: aliceKeys.publicKey });
+  const alice = sim.peerClient(); const bob = sim.peerClient();
+  await alice.connect(); await bob.connect();
+  const aOut = collect(alice); const bOut = collect(bob);
+  cluster.start();
+
+  // Alice claims 3 XAH (redeemed on-ledger: above the 2 XAH threshold) and pays Bob 1 XAH; Bob's
+  // 0.99 XAH stays below his payout threshold. Alice never registers a payout address.
+  await sleepRounds(cluster, 1);
+  await submit(alice, H.claimInput(channel, 3_000_000, aliceKeys.privateKey));
+  await submit(bob, { t: 'settle_to', addr: 'rBobPayoutAddress1111111111111111' });
+  await sleepRounds(cluster, 2);
+  const { fulfillment, condition } = H.condition();
+  await submit(alice, H.prepareInput('pay1', { amount: 1_000_000, destination: H.peerAddress(sim.config, bob.publicKey), expiresAt: Date.now() + 30_000, condition }));
+  await sleepRounds(cluster, 2);
+  await submit(bob, H.fulfillInput(find(bOut, (m) => m.t === 'ilp').id, fulfillment));
+  await sleepRounds(cluster, 4);
+  assert.equal(mock.channels.get(channel).balance, 3_000_000n, 'claim redeemed');
+  assert.equal(JSON.parse(await alice.submitContractReadRequest(JSON.stringify({ t: 'balance' }))).balance, '2000000');
+  assert.equal(mock.balance('rBobPayoutAddress1111111111111111'), 0n, 'below the payout threshold');
+
+  // The account's EVR is gone and the hosts' leases are inside the last half hour: every attempt
+  // to extend them fails, so the cluster executes its last will while it can still sign.
+  mock.acct(master).evr = 0;
+  for (const lease of mock.leases.values()) lease.expiresAt = Date.now() + 20 * 60_000;
+  await sleepRounds(cluster, 6);
+  assert.ok(mock.log.some((l) => l.type === 'Payment' && l.resultCode === 'tecPATH_PARTIAL'), 'lease extensions failed for lack of EVR');
+  const info = JSON.parse(await alice.submitContractReadRequest(JSON.stringify({ t: 'info' })));
+  assert.equal(info.winding, true, JSON.stringify(info.lease));
+  const noticeA = find(aOut, (m) => m.t === 'last_will' && m.active);
+  assert.ok(noticeA, 'alice was told');
+  assert.equal(noticeA.payoutTo, aliceKeys.address, 'no payout address: back to the account that funded her channel');
+  assert.equal(noticeA.payoutSource, 'channel');
+  assert.equal(mock.balance(aliceKeys.address), 100_000_000n - 5_000_000n + 2_000_000n, 'alice got her 2 XAH back');
+  assert.equal(mock.balance('rBobPayoutAddress1111111111111111'), 990_000n, 'bob got his 0.99 XAH although it was below the threshold');
+  const bobPaid = find(bOut, (m) => m.t === 'payout' && m.status === 'validated');
+  assert.equal(bobPaid.lastWill, true);
+  // No new money is taken while winding down.
+  await submit(alice, H.claimInput(channel, 3_500_000, aliceKeys.privateKey));
+  await sleepRounds(cluster, 2);
+  assert.equal(find(aOut, (m) => m.t === 'claim_ack' && m.amt === '3500000').reason, 'connector is winding down');
+
+  // A rescue: EVR arrives, the cluster extends its leases again, and normal service resumes.
+  mock.fundEvr(master, 30);
+  await sleepRounds(cluster, 4);
+  for (const lease of mock.leases.values()) assert.ok(lease.expiresAt > Date.now() + 3 * lease.momentMs, 'lease extended');
+  assert.equal(JSON.parse(await alice.submitContractReadRequest(JSON.stringify({ t: 'info' }))).winding, false);
+  assert.ok(find(aOut, (m) => m.t === 'last_will' && m.active === false), 'alice was told it is over');
+  await submit(alice, H.claimInput(channel, 3_500_000, aliceKeys.privateKey));
+  await sleepRounds(cluster, 2);
+  assert.equal(find(aOut, (m) => m.t === 'claim_ack' && m.amt === '3500000' && m.ok).credited, '500000');
+
+  await cluster.stop();
+  assert.deepEqual(errors, [], 'no consensus forks');
+  assert.equal(cluster.forked, false);
+});
+
 test('a node with corrupted state is detected as a fork', async (t) => {
   const sim = createSimConnector({ nodeCount: 3, roundTimeMs: 20, leases: false });
   const { cluster } = sim;

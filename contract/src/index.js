@@ -56,6 +56,8 @@ async function main() {
       factsEvery: file.xahau.factsEvery || 5,
       nomadEvery: file.xahau.nomadEvery || 10,
       nomad: file.nomad || null,
+      momentSec: file.xahau.momentSec || 3600,
+      cacheDir: path.dirname(diagFile), // per node, outside consensus state
       logger,
     });
   }

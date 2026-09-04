@@ -23,6 +23,7 @@
 //   {"t":"ilp","id":..,"p":..}          forwarded Prepare, or Fulfill/Reject reply
 //   {"t":"claim_ack","ch":..,"amt":..,"ok":true|false,"reason":..,"credited":..}
 //   {"t":"payout","status":"submitted"|"validated"|"failed","amt":..,"tx":..}
+//   {"t":"last_will","active":true|false,"deadline":..,"balance":..,"payoutTo":..}  winding down / recovered
 //   {"t":"err","reason":..,"ref":..}
 
 const MAX_INPUT_BYTES = 64 * 1024;

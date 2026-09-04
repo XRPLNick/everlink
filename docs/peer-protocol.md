@@ -40,7 +40,8 @@ the plugin implements, and anything that can speak to a HotPocket node can imple
   48 KiB of base64. `ilp-packet` produces these.
 
 A Prepare is checked in this order, and the first failure is returned as an ILP Reject under the
-same `id` (see the table of codes below): duplicate `id` for this peer → `F00`; malformed
+same `id` (see the table of codes below): connector winding down (its
+[last will](money.md#if-the-cluster-dies-the-last-will)) → `F02`; duplicate `id` for this peer → `F00`; malformed
 destination → `F00`; destination outside the connector's prefix → `F02`; unknown peer → `F02`;
 addressed to yourself → `F02`; destination peer not currently connected → `T01`; amount
 above `maxPacketAmount` → `F08`; `expiresAt` not later than *now + 2 × minExpiryWindowMs*
@@ -84,6 +85,7 @@ fails:
 
 | reason | meaning |
 |---|---|
+| `connector is winding down` | The connector's [last will](money.md#if-the-cluster-dies-the-last-will) is executing: it takes no new money; `deadline` (ms since the epoch) says when its hosting ends. |
 | `channel not (yet) observed on ledger` | The cluster has not seen the channel in its last ledger observation. It looks every `factsEvery` rounds; retry in ~10 s. Also what you get if the channel's destination is not the connector's account. |
 | `channel is bound to another peer` | A channel is bound to the first peer that presents a valid claim on it and cannot be used by another identity afterwards. |
 | `claim amount must exceed previous claim` | `amt` must be larger than the last accepted claim (`last` is returned). |
@@ -103,7 +105,10 @@ On success: `{"t":"claim_ack","ch":…,"amt":…,"ok":true,"credited":"<drops>",
 
 A Xahau classic address and an optional destination tag (0…2³²−1, or `null`). Answered with
 `{"t":"ack","of":"settle_to","addr":…,"tag":…}`. Can be changed at any time; a payout already
-planned keeps the address it was planned with.
+planned keeps the address it was planned with. A different address or tag also resets the retry
+backoff of a payout that failed. It is where the connector's last will pays you — without it, the
+last will falls back to the account that owned the first channel you funded from, and if there is
+none it cannot pay you at all (`balance` shows the answer as `lastWillTo`).
 
 ### `withdraw` — pay me out now
 
@@ -122,8 +127,8 @@ returns `err: read-only request sent as input`.
 
 | request | answer |
 |---|---|
-| `{"t":"info"}` | `ilpAddress` (yours), `connectorAddress` (the prefix), `assetCode`, `assetScale`, `feeBps`, `feeFlat`, `maxPacketAmount`, `minExpiryWindowMs`, `masterAddress` (the account to open channels to), `redeemThresholdDrops`, `payoutThresholdDrops`, `minPayoutDrops`, `rounds` (rounds the contract has run), `stats` (`prepares`, `fulfills`, `rejects`, `expiries`, `claims`) |
-| `{"t":"balance"}` | `balance` (drops available), `held` (drops in flight), `payoutAddress`, `pendingPayout` (the payout record in progress, or `null`) |
+| `{"t":"info"}` | `ilpAddress` (yours), `connectorAddress` (the prefix), `assetCode`, `assetScale`, `feeBps`, `feeFlat`, `maxPacketAmount`, `minExpiryWindowMs`, `masterAddress` (the account to open channels to), `redeemThresholdDrops`, `payoutThresholdDrops`, `minPayoutDrops`, `lastWillSec`, `rounds` (rounds the contract has run), `stats` (`prepares`, `fulfills`, `rejects`, `expiries`, `claims`), `winding` (`true` while the last will executes), `lastWill` (`{ sinceLcl, sinceTs, deadlineMs }` or `null`), `lease` (the latest lease fact: `deadlineMs` when the signer quorum's hosting ends, `quorum`, `signers`, `momentMs`, `expiries` per signer node, latest first; `null` until observed), `leaseNote` (why the fact is missing or partial, e.g. a signer node without lease data; `null` when all is well) |
+| `{"t":"balance"}` | `balance` (drops available), `held` (drops in flight), `payoutAddress`, `pendingPayout` (the payout record in progress, or `null`), `lastWillTo` (`{ address, tag, source: "settle_to" \| "channel" }` — where the last will would pay you — or `null`) |
 | `{"t":"channels"}` | the channels bound to you — `id`, `owner`, `publicKey`, `fundedAmount`, `ledgerBalance` (already redeemed on-ledger), `lastClaimAmount`, `expiration`, `settleDelay`, `redeemPending`, `closePending` |
 
 Amounts are decimal strings of drops throughout. `balance` can dip below zero by at most the
@@ -136,9 +141,11 @@ prepaid.
 |---|---|
 | `{"t":"ilp","id":…,"p":…}` | Either the reply (Fulfill/Reject) to a Prepare you sent under that `id`, or a Prepare forwarded to you, which you must answer under that `id`. |
 | `{"t":"claim_ack",…}` | Result of a `claim` (above). |
-| `{"t":"payout","status":"submitted","amt":…,"tx":…}` | A Payment to your payout address has been co-signed and submitted; `tx` is its hash. |
+| `{"t":"payout","status":"submitted","amt":…,"tx":…}` | A Payment to your payout address has been co-signed and submitted; `tx` is its hash. Every transaction the cluster submits carries a memo of type `everlink/intent` naming the intent it fulfils (`p<n>` for payouts). |
 | `{"t":"payout","status":"validated","amt":…,"tx":…}` | The ledger validated it. |
-| `{"t":"payout","status":"failed","amt":…,"tx":…,"reason":…}` | It was rejected or never validated; the amount is back in your balance. |
+| `{"t":"payout","status":"failed","amt":…,"tx":…,"reason":…,"retryAfterRounds":…}` | It was rejected, never validated, or (`reason: submission lost`) planned by a round that died before submitting it; the amount is back in your balance and will be tried again after `retryAfterRounds` rounds (20, doubling per failure, at most 2 000; 0 for a lost submission, which is nobody's fault). |
+| `{"t":"last_will","active":true,"deadline":…,"balance":…,"payoutTo":…,"payoutSource":…}` | The connector is winding down: its hosting ends at `deadline` (ms since the epoch) and your `balance` is being paid to `payoutTo` (`payoutSource` `settle_to` or `channel`). With no known home, `payoutTo` is `null` and a `hint` asks for a `settle_to`. Payouts made this way carry `"lastWill":true`. Sent to every connected peer when the wind-down starts. |
+| `{"t":"last_will","active":false,"deadline":…}` | The hosting was extended after all; normal operation has resumed. |
 | `{"t":"ack","of":"settle_to"\|"withdraw",…}` | Acknowledgement of a setting. |
 | `{"t":"err","reason":…,"ref":…}` | Something malformed or impossible: `not json`, `missing type`, `bad id`, `bad packet`, `bad channel`, `bad amount`, `bad signature`, `bad address`, `bad tag`, `unknown type`, `bad size`, `connector is full`, `undecodable ILP packet`, `no such pending packet`, `fulfillment does not match condition`, `set a payout address first (settle_to)`, `read-only request sent as input`. |
 
@@ -148,6 +155,7 @@ prepaid.
 |---|---|---|
 | `F00` | `duplicate packet id` / `invalid destination address` / `invalid amount` | Malformed or repeated Prepare. |
 | `F02` | `destination not reachable through this connector` / `unknown peer` / `cannot route to self` | The destination is not one of the connector's peers. |
+| `F02` | `connector is winding down: its hosting ends soon and balances are being paid out` | The connector's last will is executing; it routes nothing any more. Final, so STREAM stops rather than retrying; your balance is on its way to your payout address. |
 | `F08` | `packet exceeds maximum amount` | Amount above `maxPacketAmount`; the data field carries the received and maximum amounts (RFC 27 F08 format), which STREAM uses to size its packets. |
 | `R00` | `transfer timed out` | The forwarded packet expired without a reply. |
 | `R02` | `insufficient timeout` | Your `expiresAt` leaves less than two expiry windows. |

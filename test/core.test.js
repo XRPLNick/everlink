@@ -201,17 +201,33 @@ test('payouts: threshold or withdraw, only from on-ledger funds, refund on failu
   rc.applyIntentResults([{ id: rc.intents[0].id, ok: false, error: 'tecUNFUNDED' }]);
   assert.equal(s.peers[H.PEER_B].balance, '6000000', 'refunded');
   assert.deepEqual(s.payouts, {});
+  const failed = H.outputsTo(rc, H.PEER_B).at(-1);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.retryAfterRounds, 20, 'a failed payout is not retried every round (fees are charged for rejected Payments)');
+  // Still owed 6 XAH, still above the threshold: no new attempt until the backoff has passed.
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 4, connected: new Set([H.PEER_B]), inputs: [], facts: null });
+  assert.equal(rc.intents.length, 0, 'backing off');
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 23, connected: new Set([H.PEER_B]), inputs: [], facts: null });
+  assert.equal(rc.intents.length, 1, 'retried after the backoff');
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: false, error: 'tecUNFUNDED' }]);
+  assert.equal(H.outputsTo(rc, H.PEER_B).at(-1).retryAfterRounds, 40, 'backoff doubles');
+  // Re-sending the same address changes nothing; a new one (here a new tag) resets the backoff.
   // Withdraw below threshold but above minimum.
   s.peers[H.PEER_B].balance = '1500000';
-  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 4, connected: new Set([H.PEER_B]), inputs: [{ peer: H.PEER_B, raw: JSON.stringify({ t: 'withdraw' }) }], facts: null });
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 24, connected: new Set([H.PEER_B]), inputs: [{ peer: H.PEER_B, raw: JSON.stringify({ t: 'settle_to', addr: 'rBobPayoutAddress1111111111111111', tag: 7 }) }, { peer: H.PEER_B, raw: JSON.stringify({ t: 'withdraw' }) }], facts: null });
+  assert.equal(rc.intents.length, 0, 'same address: still backing off');
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 25, connected: new Set([H.PEER_B]), inputs: [{ peer: H.PEER_B, raw: JSON.stringify({ t: 'settle_to', addr: 'rBobPayoutAddress1111111111111111', tag: 8 }) }], facts: null });
   assert.equal(rc.intents.length, 1);
+  assert.equal(rc.intents[0].tx.DestinationTag, 8);
+  assert.equal(rc.intents[0].tx.Memos[0].Memo.MemoData, Buffer.from(rc.intents[0].id).toString('hex').toUpperCase(), 'every transaction names its intent');
   rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'H9', resultCode: 'tesSUCCESS' }]);
   assert.equal(s.payouts[rc.intents[0].id].status, 'submitted');
   assert.equal(H.outputsTo(rc, H.PEER_B).at(-1).status, 'submitted');
-  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 5, connected: new Set([H.PEER_B]), inputs: [], facts: { ...facts('38500000'), validatedTxs: [{ hash: 'H9', resultCode: 'tesSUCCESS' }] } });
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 26, connected: new Set([H.PEER_B]), inputs: [], facts: { ...facts('38500000'), validatedTxs: [{ hash: 'H9', resultCode: 'tesSUCCESS' }] } });
   assert.equal(H.outputsTo(rc, H.PEER_B)[0].status, 'validated');
   assert.deepEqual(s.payouts, {});
   assert.equal(s.peers[H.PEER_B].pendingPayout, null);
+  assert.equal(s.peers[H.PEER_B].payoutFailures, 0);
 });
 
 test('treasury buys EVR from free equity only', () => {
@@ -295,6 +311,130 @@ test('channels with a short settle delay are refused; peer cap and idle pruning'
   assert.equal(Object.keys(s2.peers).length, 0);
   rc = hello(H.PEER_C, 101);
   assert.equal(H.outputsTo(rc, H.PEER_C)[0].reason, 'set a payout address first (settle_to)');
+});
+
+test('last will: hosting about to lapse -> no new money in, every claim redeemed, everyone paid out to where the money belongs', () => {
+  const { s, keysA, chA } = fundedState({ a: 1_000_000 });
+  const all = [H.PEER_A, H.PEER_B, H.PEER_C];
+  const lease = (deadlineMs) => ({ lease: { deadlineMs, quorum: 2, signers: 3, momentMs: 3600000 } });
+  // Alice pays Bob 0.1 XAH; Bob (settle_to registered) now holds 0.099 XAH, Alice 0.9 XAH from her channel.
+  const { fulfillment, condition } = H.condition();
+  let rc = round(s, [{ peer: H.PEER_A, raw: H.prepareInput('p1', { amount: 100_000, destination: H.peerAddress(CFG, H.PEER_B), expiresAt: T0 + 30_000, condition }) }], { connected: all });
+  rc = round(s, [{ peer: H.PEER_B, raw: H.fulfillInput(H.outputsTo(rc, H.PEER_B)[0].id, fulfillment) }], { lcl: 4, connected: all });
+  assert.equal(s.peers[H.PEER_B].balance, '99000');
+  // Carol has a balance but neither a payout address nor a channel; Dave has dust.
+  const blank = { held: '0', payoutAddress: null, payoutTag: null, withdrawRequested: false, inflight: {}, pendingPayout: null, firstSeenLcl: 1, lastSeenLcl: 4 };
+  s.peers[H.PEER_C] = { ...blank, balance: '500000' };
+  s.peers[`ed${'d'.repeat(64)}`] = { ...blank, balance: '500', payoutAddress: 'rDavePayoutAddress111111111111111' };
+
+  // Three hours of hosting left: business as usual.
+  rc = round(s, [], { lcl: 5, connected: all, facts: lease(T0 + 10 + 3 * 3600_000) });
+  assert.equal(s.lastWill, null);
+  assert.equal(rc.intents.length, 0);
+  assert.equal(handleReadRequest(s, CFG, H.PEER_A, JSON.stringify({ t: 'info' })).winding, false);
+  assert.deepEqual(handleReadRequest(s, CFG, H.PEER_A, JSON.stringify({ t: 'balance' })).lastWillTo, { address: keysA.address, tag: null, source: 'channel' });
+
+  // Twenty minutes left and not extended: the last will — but not in a cluster's first hundred
+  // rounds, when short leases are normal and the Nomad loop has not had its first go.
+  rc = round(s, [], { lcl: 6, connected: all, facts: lease(T0 + 10 + 20 * 60_000) });
+  assert.equal(s.lastWill, null, 'grace period');
+  s.rounds = 200;
+  rc = round(s, [], { lcl: 6, connected: all, facts: lease(T0 + 10 + 20 * 60_000) });
+  assert.deepEqual(s.lastWill, { sinceLcl: 6, sinceTs: T0 + 10, deadlineMs: T0 + 10 + 20 * 60_000 });
+  assert.ok(rc.log.some((l) => l.startsWith('last will:')), rc.log.join('|'));
+  const noticeA = H.outputsTo(rc, H.PEER_A).find((m) => m.t === 'last_will');
+  assert.deepEqual(noticeA, { t: 'last_will', active: true, deadline: s.lastWill.deadlineMs, balance: '900000', payoutTo: keysA.address, payoutSource: 'channel' });
+  assert.equal(H.outputsTo(rc, H.PEER_B).find((m) => m.t === 'last_will').payoutSource, 'settle_to');
+  assert.ok(H.outputsTo(rc, H.PEER_C).find((m) => m.t === 'last_will').hint.includes('settle_to'));
+  // Alice's 1 XAH claim was far below the 1000 XAH redeem threshold; it is redeemed now anyway, and
+  // both known homes are paid: Alice to the account her channel came from, Bob to his address.
+  const kinds = rc.intents.map((i) => `${i.kind}:${i.tx.Destination || i.tx.Channel}:${i.tx.Amount || i.tx.Balance}`).sort();
+  assert.deepEqual(kinds, [`payout:${keysA.address}:900000`, 'payout:rBobPayoutAddress1111111111111111:99000', `redeem:${chA}:1000000`].sort());
+  assert.equal(s.peers[H.PEER_A].balance, '0');
+  assert.equal(s.peers[H.PEER_C].balance, '500000', 'nowhere to send it');
+  assert.equal(s.peers[`ed${'d'.repeat(64)}`].balance, '500', 'dust is left alone');
+  for (const i of rc.intents) rc.applyIntentResults([{ id: i.id, ok: true, hash: `H${i.id}`, resultCode: 'tesSUCCESS' }]);
+  assert.equal(H.outputsTo(rc, H.PEER_B).find((m) => m.t === 'payout').lastWill, true);
+  assert.equal(handleReadRequest(s, CFG, H.PEER_A, JSON.stringify({ t: 'info' })).winding, true);
+
+  // While winding down: no Prepares, no claims; settle_to still works and is honoured next round.
+  rc = round(s, [
+    { peer: H.PEER_A, raw: H.prepareInput('p2', { amount: 10, destination: H.peerAddress(CFG, H.PEER_B), expiresAt: T0 + 30_000, condition }) },
+    { peer: H.PEER_A, raw: H.claimInput(chA, 1_500_000, keysA.privateKey) },
+    { peer: H.PEER_C, raw: JSON.stringify({ t: 'settle_to', addr: 'rCarrPayoutAddress1111111111111111' }) },
+  ], { lcl: 7, connected: all });
+  const rej = H.decodeOut(H.outputsTo(rc, H.PEER_A)[0]);
+  assert.equal(rej.data.code, 'F02');
+  assert.match(rej.data.message, /winding down/);
+  assert.equal(H.outputsTo(rc, H.PEER_A)[1].reason, 'connector is winding down');
+  assert.equal(rc.intents.length, 1);
+  assert.equal(rc.intents[0].tx.Destination, 'rCarrPayoutAddress1111111111111111');
+  assert.equal(rc.intents[0].tx.Amount, '500000');
+  assert.equal(s.payouts[rc.intents[0].id].lastWill, true);
+  rc.applyIntentResults([{ id: rc.intents[0].id, ok: true, hash: 'HC', resultCode: 'tesSUCCESS' }]);
+
+  // Nothing new is planned on the following rounds (no balances left, redemption pending).
+  rc = round(s, [], { lcl: 8, connected: all });
+  assert.equal(rc.intents.length, 0);
+
+  // The hosting gets extended after all (four more hours): back to normal, claims accepted again.
+  rc = round(s, [], { lcl: 9, connected: all, facts: lease(T0 + 10 + 4 * 3600_000) });
+  assert.equal(s.lastWill, null);
+  assert.deepEqual(H.outputsTo(rc, H.PEER_A)[0], { t: 'last_will', active: false, deadline: T0 + 10 + 4 * 3600_000 });
+  rc = round(s, [{ peer: H.PEER_A, raw: H.claimInput(chA, 1_500_000, keysA.privateKey) }], { lcl: 10, connected: all });
+  assert.equal(H.outputsTo(rc, H.PEER_A)[0].credited, '500000');
+  // An unknown lease (bridge could not tell) never changes the wind-down state.
+  rc = round(s, [], { lcl: 11, connected: all, facts: { lease: null } });
+  assert.equal(s.lastWill, null);
+  assert.equal(s.treasury.lease.deadlineMs, T0 + 10 + 4 * 3600_000);
+});
+
+test('last will details: intents capped per round, only the ledger reserve kept, channel owner remembered after the channel closed', () => {
+  const cfg = makeConfig({ masterAddress: 'rMaster', reserveDrops: '20000000', lastWillReserveDrops: '3000000', redeemThresholdDrops: '1000000000' });
+  const s = initialState();
+  s.rounds = 500;
+  const keys = H.channelKeys();
+  const ch = 'B'.repeat(64);
+  const facts = (extra = {}) => ({ ledgerIndex: 50, masterBalance: '22000000', evrBalance: '1', channelsComplete: true, channels: [H.channelFact(ch, { account: keys.address, publicKey: keys.publicKey, amount: 5_000_000 })], ...extra });
+  processRound(s, cfg, { timestamp: T0, lclSeqNo: 1, connected: new Set(), inputs: [], facts: facts() });
+  // Alice funds 1 XAH from her channel; six other peers hold 0.1 XAH each with payout addresses.
+  processRound(s, cfg, { timestamp: T0, lclSeqNo: 2, connected: new Set(), inputs: [{ peer: H.PEER_A, raw: H.claimInput(ch, 1_000_000, keys.privateKey) }], facts: null });
+  assert.equal(s.peers[H.PEER_A].channelOwner, keys.address, 'the funding account is remembered when the channel is bound');
+  const blank = { held: '0', payoutTag: null, withdrawRequested: false, inflight: {}, pendingPayout: null, firstSeenLcl: 1, lastSeenLcl: 2 };
+  for (let i = 0; i < 6; i++) s.peers[`ed${String(i).repeat(64)}`] = { ...blank, balance: '100000', payoutAddress: `rPeer${i}PayoutAddress11111111111111111`.slice(0, 33) };
+  // The channel is redeemed and closed by its owner before the wind-down: Alice's channel record goes away ...
+  let rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 3, connected: new Set(), inputs: [], facts: facts({ channels: [] }) });
+  assert.equal(s.channels[ch], undefined);
+  assert.deepEqual(handleReadRequest(s, cfg, H.PEER_A, JSON.stringify({ t: 'balance' })).lastWillTo, { address: keys.address, tag: null, source: 'channel' }, '... but her money still knows its way home');
+  // Wind-down. On the ledger: 22 XAH; the 20 XAH operating reserve would leave 2 XAH for 1.6 XAH of
+  // balances — enough — but with the 3 XAH ledger reserve there is 19. Seven payouts are due; only
+  // four intents fit in a round, the rest follow in the next one, in the same order on every node.
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 4, connected: new Set(), inputs: [], facts: facts({ channels: [], lease: { deadlineMs: T0 + 10 * 60_000, quorum: 2, signers: 3, momentMs: 3600000 } }) });
+  assert.ok(s.lastWill);
+  assert.equal(rc.intents.length, 4, 'capped');
+  assert.deepEqual(rc.intents.map((i) => i.peer), ['ed0', 'ed1', 'ed2', 'ed3'].map((k) => `ed${k[2].repeat(64)}`), 'peers in key order');
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 5, connected: new Set(), inputs: [], facts: null });
+  assert.equal(rc.intents.length, 3, 'the rest');
+  assert.equal(rc.intents[2].tx.Destination, keys.address, "Alice's, to the account behind her closed channel");
+  assert.equal(Object.keys(s.payouts).length, 7);
+  assert.ok(Object.values(s.payouts).every((p) => p.lastWill && p.status === 'planned' && p.plannedLedger === 50));
+
+  // A round died after submitting two of them and before recording it. The bridge finds one on
+  // the ledger by its memo (validated), cannot find the other after its ledger window: refunded.
+  const [found, lost] = Object.keys(s.payouts).slice(0, 2);
+  const lostPeerKey = s.payouts[lost].peer;
+  assert.equal(s.payouts[found].destination, s.peers[s.payouts[found].peer].payoutAddress, 'the record knows where it was going');
+  rc = processRound(s, cfg, { timestamp: T0, lclSeqNo: 6, connected: new Set([lostPeerKey]), inputs: [], facts: { ...facts({ channels: [], masterBalance: '21900000', ledgerIndex: 120 }), reconciled: [{ id: found, hash: 'HF', resultCode: 'tesSUCCESS' }, { id: lost, lost: true }] } });
+  assert.equal(s.payouts[found], undefined, 'recovered and settled');
+  assert.equal(s.payouts[lost], undefined);
+  const lostPeer = s.peers[lostPeerKey];
+  assert.ok(!lostPeer.payoutFailures, 'a submission that never happened is not held against the address');
+  assert.deepEqual(H.outputsTo(rc, lostPeerKey).find((m) => m.t === 'payout'), { t: 'payout', status: 'failed', amt: '100000', reason: 'submission lost', retryAfterRounds: 0, lastWill: true });
+  assert.ok(rc.log.some((l) => l.includes('recovered from the ledger')) && rc.log.some((l) => l.includes('never submitted')));
+  // ... refunded and, the wind-down still on, planned again in the same round under a new id.
+  assert.ok(rc.intents.some((i) => i.peer === lostPeerKey && i.id !== lost), 'replanned');
+  assert.equal(lostPeer.balance, '0');
+  assert.ok(lostPeer.pendingPayout && lostPeer.pendingPayout !== lost);
 });
 
 test('a packet whose next hop disconnects is rejected T01 and refunded, unless it was fulfilled that round', () => {
