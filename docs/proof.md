@@ -109,8 +109,8 @@ UNL of the same three public keys, HotPocket ledger 660–665 and advancing.
 
 ## Self-funding: the cluster pays its own hosts
 
-The other half of the 2019 sentence — *"it in turn pays for its own resource usage"* — is a
-separate claim, and the first cluster never had to make it: its four-hour lease was bought up
+That the connector pays for its own hosting is a separate claim, and the first cluster never
+had to make it: its four-hour lease was bought up
 front, and when the lease ended the hosts burned the lease tokens (the `URITokenBurn`
 transactions at 06:21–08:26 UTC on the account's list) and the cluster was gone.
 
