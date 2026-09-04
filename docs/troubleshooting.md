@@ -142,7 +142,19 @@ history of every renewal is in its diagnostics: the read request
 `{"t":"diag","events":500,"filter":"lease|nomad"}` returns the last 500 matching event lines
 (default 60 lines, all events; at most 2 000). A host that keeps refusing shows as `renewal
 failed: Host is not active.` (the Evernode registry has it inactive) or `renewal rejected:
-tec…`; the other nodes are renewed regardless.
+tec…`; the other nodes are renewed regardless. A `renewal failed: … No enough signatures`
+in a cluster's first minutes is the multisign election running before the other nodes have
+joined the mesh; the backoff retries it.
+
+**The cluster never came to life after `cluster-create`** — the primary node ran a round or
+two and stopped, the other nodes answer no read request and report a UNL of one node (the
+primary), ledgers do not move. evdevkit hands the contract to the primary alone and expects
+the others to have synced with it in the thirty seconds before; when they have not, nothing
+can push the bundle to them afterwards (their user keys are discarded). Run
+`run-mainnet-probe.cmd`: if every peer port answers, it is not a firewall, and the only cure
+found so far is to deploy again — `run-mainnet-2h-known-hosts.cmd` puts hosts known to have
+formed a mesh first. Do not read much into HotPocket's `peers` count in the status line: a
+node in consensus with the other two has reported `peers 0`.
 
 The contract keeps per-node diagnostics outside consensus state and answers a read request
 `{"t":"diag","probe":true,"layers":true}` with the last rounds' timings and phases, crash

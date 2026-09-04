@@ -33,9 +33,11 @@ hpdevkit deploy dist -m -s <master-account-secret>
 
 ## `deploy/testnet/` — an Evernode cluster (Xahau mainnet, testnet or devnet)
 
-This is the kit that ran on mainnet on 3 September 2026: `run-mainnet-hosts.cmd`,
-`run-mainnet-keys.cmd`, `run-mainnet.cmd`, `run-mainnet-demo.cmd`, `run-mainnet-trace.cmd`,
-`run-mainnet-status.cmd`, `run-mainnet-withdraw.cmd` (and `run-testnet.cmd` / `run-devnet.cmd`
+This is the kit that ran on mainnet on 3 and 4 September 2026: `run-mainnet-hosts.cmd`,
+`run-mainnet-keys.cmd`, `run-mainnet.cmd` (`run-mainnet-2h.cmd` for two-moment leases,
+`run-mainnet-2h-known-hosts.cmd` to put hosts known to form a mesh first), `run-mainnet-demo.cmd`,
+`run-mainnet-trace.cmd`, `run-mainnet-status.cmd`, `run-mainnet-probe.cmd`,
+`run-mainnet-withdraw.cmd`, `run-mainnet-retire.cmd` (and `run-testnet.cmd` / `run-devnet.cmd`
 for the test networks, where the accounts come from faucets). The full walk-through, the
 transcript of the mainnet run and the lessons from the seven deployments that failed before it
 are in [deploy/testnet/README.md](testnet/README.md); the on-ledger evidence and the packet trace

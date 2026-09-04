@@ -94,7 +94,22 @@ async function main() {
     }
     return first.concat(rest);
   };
-  const top = spreadByOperator(reachable).concat(spreadByOperator(unknown)).slice(0, limit);
+  let top = spreadByOperator(reachable).concat(spreadByOperator(unknown)).slice(0, limit);
+  // EVERLINK_PREFER_HOSTS: host accounts to put first (e.g. the hosts of a cluster that is known
+  // to have formed a mesh), if they are active with a free slot; the ranked list follows.
+  const prefer = String(process.env.EVERLINK_PREFER_HOSTS || '').split(/[\s,;]+/).filter((a) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(a));
+  if (prefer.length) {
+    const byAddr = new Map(free.map((h) => [h.address, h]));
+    const first = [];
+    for (const a of prefer) {
+      const h = byAddr.get(a);
+      if (!h) { say(`preferred host ${a}: not active with a free slot, skipped`); continue; }
+      if (!h.reach) { try { h.domain = await new evernode.XrplAccount(h.address, null, { xrplApi: api }).getDomain(); } catch (e) { /* keep */ } h.reach = await probe(h.domain); }
+      first.push(h);
+    }
+    top = first.concat(top.filter((h) => !first.includes(h))).slice(0, Math.max(limit, first.length));
+    say(`preferred hosts first: ${first.map((h) => h.address).join(' ')}`);
+  }
   const leases = free.map((h) => h.leaseEvr).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   const median = leases.length ? leases[Math.floor(leases.length / 2)] : 0;
   say(`${free.length} with free slots (lease EVR/moment: min ${leases[0]}, median ${median}, max ${leases[leases.length - 1]}); top ${top.length}:`);

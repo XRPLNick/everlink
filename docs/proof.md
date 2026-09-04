@@ -203,6 +203,32 @@ had no upgrade path by design. What this day proves is narrower than the day bef
 cluster renewed one of its leases with nobody watching, and a cluster that fails to renew the
 others dies exactly as the design says it will, account and all.
 
+## Day two, evening: a new cluster renews its own leases in its second minute
+
+The code written after the death — the last will and the contract's own renewals — went out
+the same evening on a new tenant account, `rKJFVrTc3wcnZfVvDDJcB1qo28VJjvNZgA`, funded by
+hand with 10 XAH and 1 EVR. The first attempt (17:30 UTC, three best-ranked hosts) never
+formed a mesh — evdevkit's bootstrap handoff from the primary to the other two nodes did not
+happen, cost 0.000006 EVR, cause unknown, details in the
+[deploy README](../deploy/testnet/README.md#tenth-deployment-1730-utc-4-september-the-mesh-never-formed).
+The second (17:50 UTC), on the three hosts of the 3 September cluster, came up at once and did
+what cluster 9 could not. Two-moment leases, so every node was due for renewal the moment the
+contract read its first lease fact:
+
+| UTC | Ledger | Hash | What it is |
+|---|---|---|---|
+| ~17:54:04 | — | — | first attempt, node 1: everpocket's `No enough signatures: Total weight: 1, Quorum: 2` after 20 s — the other signers were not in the mesh yet; recorded in the node's diagnostics, retried after the per-node backoff of 20 rounds |
+| 17:54:52 | 25,565,969 | `3B0709064FF392D38B3B70A14B1F7B220675316DA6BBC48B2CFBB73F563C02E2` | `Payment` of 0.000024 EVR to `rfW86DFVRKUCc53pKdWTyGFMTfeYNNERhs` (evernode.kimchigraphics.com), `evnExtendLease` for node 1's token `8376DEC2…`, two signers — 24 more moments |
+| 17:55:11 | 25,565,974 | `537CE61D0E89307DE21247DEC547D04DF36E4B68FEE7504D76F7EFE418C94AFF` | the same for node 2, `rfHECp4mtFnc6Y3jTsknjJocCisCVjtjf9` (xrp-arnie13.sbs.xrp-arnie1.com), three signers |
+| 17:55:21 | 25,565,976 | `10F6C92ACCD530994F12DFFF9CC36656CE21F0D6763D84A165D014840C057344` | the same for node 3, `rLJU57DimMryraUobdL3iiAMhMmHHfCmnf` (zeb-a-nodew-04.xahaud.xyz), three signers |
+
+Three renewals in three consecutive rounds, most urgent first, one per round, 600 drops of fee
+each — the shape the [money page](money.md#keeping-the-hosts-paid) describes, on the ledger.
+The status check at 17:58 read every node as paid until 19:31 UTC on 5 September, with the
+round of its last renewal. The master key of this account is not retired: until the cluster
+has renewed all its nodes twice with nobody watching (the next renewals fall due about 17:31
+UTC on 5 September), a person can still sweep it.
+
 ## What this does and does not prove
 
 It proves that a HotPocket contract running on three Evernode hosts observed the ledger,
@@ -214,5 +240,7 @@ signing anything after the cluster was created, and no key left that could.
 
 What it does not prove is that the hosts cannot collude: two of the three could, in
 principle, sign outside consensus. That is the custodial risk the design note's §5 and §9
-describe, and why the float is pocket money. And it does not prove that a cluster keeps
-itself alive: this one did not, and took its account with it, as the section above records.
+describe, and why the float is pocket money. And it does not yet prove that a cluster keeps
+itself alive: the first one did not, and took its account with it; its successor renewed all
+three of its leases in its second minute, with the retry that the death taught, and has a day
+to show that it does so again with nobody watching.

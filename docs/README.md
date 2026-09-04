@@ -16,7 +16,7 @@ the reasoning behind the design is in the [design note](design.html).
 | [Configuration](configuration.md) | Every key in `everlink.config.json`, its default and its effect — the numbers a peer sees in the `info` read request. |
 | [Troubleshooting](troubleshooting.md) | The errors and rejections you will meet, what they mean and what to do. |
 | [Glossary](glossary.md) | HotPocket, Evernode, ILP and Xahau terms used throughout. |
-| [Verify the mainnet run](proof.md) | The on-ledger evidence of the 3 September 2026 run and a decoded packet trace. |
+| [Verify the mainnet run](proof.md) | The on-ledger evidence of the 3 and 4 September 2026 runs — the payment, the self-funding, the death of the second cluster and the third cluster's own renewals — and a decoded packet trace. |
 
 ## The model in one paragraph
 

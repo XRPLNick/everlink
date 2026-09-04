@@ -20,7 +20,9 @@ scripts only ever spend from the tenant account when *you* launch the deploy or 
 | *you* | send **1 EVR** to the tenant once the trust line exists (any amount works; the leases cost microscopic sums) | 1 EVR |
 | `run-mainnet-demo.cmd` | Alice opens a 5 XAH channel to the cluster account, claims 3 XAH, pays Bob 1 XAH over STREAM; the cluster redeems the claim and pays Bob out with multisigned transactions; Alice then asks to close and the cluster closes the channel, returning her unspent 2 XAH | 1 XAH goes Alice -> Bob (fee 0.0025 XAH stays in the cluster account) |
 | `run-mainnet-trace.cmd` | the same payment again (2 XAH channel, 1 XAH claim, 1 XAH over STREAM) with every ILP packet recorded and decoded into `out/stream-trace.txt` / `.json`; Bob is paid out and Alice's channel closed as in the demo | 1 XAH Alice -> Bob (fee 0.0025 XAH) |
-| `run-mainnet-2h.cmd` | `run-mainnet.cmd` with `EVERLINK_MOMENTS=2`: two-hour leases, so that with the config's `lifeIncrMomentMinLimit` 4 the cluster's Nomad loop extends the leases itself right after starting — the self-funding test | lease EVR + whatever the cluster then spends on extensions (0.000017 EVR per host on the run below) |
+| `run-mainnet-2h.cmd` | `run-mainnet.cmd` with `EVERLINK_MOMENTS=2`: two-moment leases, so the contract's own renewals (`leaseExtendAheadMoments` 2) fall due the moment it starts — the self-funding test | lease EVR + what the cluster then spends on renewals (0.000024 EVR per host: 24 moments) |
+| `run-mainnet-2h-known-hosts.cmd` | the same, with `EVERLINK_PREFER_HOSTS` set to the three hosts of the 3 September cluster, which are put first in `hosts.mainnet.txt` if they are active with a free slot (the ranked list follows) — used after the tenth deployment's hosts never formed a mesh | as above |
+| `run-mainnet-probe.cmd` | from this machine: TCP and WebSocket probes of every node's peer port and user port (`out/probe-peers.log`) — the first thing to run when the nodes report no peers | nothing (read-only) |
 | `run-mainnet-retire.cmd` | **irreversible**: disables the tenant's master key (`AccountSet asfDisableMaster`) so the cluster's signer list is the only control of the account; refuses unless the ledger's signer list is the running cluster's and a quorum of nodes answers | one fee; the account's balance is the connector's from then on |
 | `run-mainnet-status.cmd` | asks every node for its ledger height, UNL, contract counters and diagnostics (`out/status.log`) | nothing (read-only) |
 | `run-mainnet-withdraw.cmd` | a saved demo peer names its payout address and asks for its unspent connector credit back (`EVERLINK_PEER`, default alice) | nothing beyond the cluster's own fee |
@@ -133,7 +135,7 @@ The cause is not on record — the diagnostics kept a minute of history — and 
 everpocket's serial renewal queue blocked by a host its tenant client would not pay ("Host is
 not active."), and the contract's 30-second cap on the housekeeping phase.
 
-### Since then: the last will and the contract's own renewals (not on mainnet)
+### Since then: the last will and the contract's own renewals
 
 The contract now carries a [last will](../../docs/money.md#if-the-cluster-dies-the-last-will)
 — when the lease fact shows the signer quorum's hosting ending within `lastWillSec` (30 minutes)
@@ -142,17 +144,58 @@ can still sign — and [renews its own leases](../../docs/money.md#keeping-the-h
 urgent node first, one per round, per-node backoff, in the submission phase that no timeout cuts
 short; everpocket's Nomad keeps prune and grow only. `{"t":"diag","events":500,"filter":"lease"}`
 returns a node's whole renewal history, and `run-mainnet-status.cmd` prints each node's lease and
-renewal bookkeeping.
+renewal bookkeeping. The dead cluster ran the code from before any of this and had no upgrade
+path, so the same evening the new code went out on a **new tenant account**
+(`rKJFVrTc3wcnZfVvDDJcB1qo28VJjvNZgA`, funded by hand with 10 XAH and, once `run-mainnet.cmd`
+had set the trust line, 1 EVR).
 
-The dead cluster ran the code from before any of this existed and had no upgrade path. Putting
-it on mainnet means a **new tenant account** (the old one's master key is gone, so it cannot buy
-leases for a new cluster) and a fresh `run-mainnet.cmd` / `run-mainnet-2h.cmd` deployment. The
-order that this run taught: let the new cluster renew all its nodes unattended at least twice
-(two days) before `run-mainnet-retire.cmd`, and let it live a week alone before inviting a peer.
-Two things to check on its first day: that the first redemption, payout and renewal — every
-transaction now carries an `everlink/intent` memo — are accepted at the usual multisig fee (a
-`telINSUF_FEE_P` in the diagnostics would mean `baseFeeDrops` needs raising), and that the status
-output shows a hosting deadline per node rather than a `leaseNote`.
+### Tenth deployment (17:30 UTC, 4 September): the mesh never formed
+
+`run-mainnet-2h.cmd` on the three best-ranked hosts of the hour (`zeb-a-nodew-01.xahaud.xyz`,
+`evernode2.kimchigraphics.com`, `xrp-arnie14.monster.xrp-arnie1.com`; three operators, three
+countries). `cluster-create` finished normally at 17:32 — acquires, extensions, signer list,
+bundle uploaded — and the cluster never came to life. Sixteen minutes later the primary had the
+contract (it ran one round, lcl 65, then waited for votes that never came), the two secondaries
+were still running evdevkit's bootstrap contract with a UNL of one node (the primary), their
+ledgers stuck at 27 and 24, and no node reported a peer. From this machine every peer port
+answered TCP (`run-mainnet-probe.cmd`, written for the occasion), so it was not a firewall.
+evdevkit's handoff is: secondaries follow the primary for thirty seconds, then the bundle goes to
+the primary alone and reaches the others through consensus; on these hosts the secondaries never
+caught the primary, and the user keys evdevkit gives them are discarded once the create is
+over, so the bundle cannot be pushed to them by hand afterwards. Cost: 0.000006 EVR and a few
+fees; the instances expire with their two-moment leases. Cause unknown; the same procedure had
+worked the day before.
+
+### Eleventh deployment (17:50 UTC): the contract renews its own leases in its second minute
+
+`run-mainnet-2h-known-hosts.cmd`: the same run on the three hosts of the ninth cluster
+(`evernode.kimchigraphics.com` as primary, `xrp-arnie13.sbs.xrp-arnie1.com`,
+`zeb-a-nodew-04.xahaud.xyz`), all active with a free slot. `cluster-create` ran 17:50–17:53;
+the contract's first rounds followed within a minute. Its first renewal attempt, node 1's lease
+at about 17:54:04, failed after twenty seconds with everpocket's `No enough signatures: Total
+weight: 1, Quorum: 2` — the other two signers had not joined the mesh yet — and the per-node
+backoff (20 rounds) did what it was built for: at lcl 72, 73 and 74 the three renewals went
+through, 24 moments each, 0.000024 EVR per host, 600-drop fee, `evnExtendLease` hook parameter:
+
+| UTC | Ledger | Hash | Host | Signers |
+|---|---|---|---|---|
+| 17:54:52 | 25,565,969 | `3B0709064FF392D38B3B70A14B1F7B220675316DA6BBC48B2CFBB73F563C02E2` | `rfW86DFVRKUCc53pKdWTyGFMTfeYNNERhs` evernode.kimchigraphics.com | 2 |
+| 17:55:11 | 25,565,974 | `537CE61D0E89307DE21247DEC547D04DF36E4B68FEE7504D76F7EFE418C94AFF` | `rfHECp4mtFnc6Y3jTsknjJocCisCVjtjf9` xrp-arnie13.sbs.xrp-arnie1.com | 3 |
+| 17:55:21 | 25,565,976 | `10F6C92ACCD530994F12DFFF9CC36656CE21F0D6763D84A165D014840C057344` | `rLJU57DimMryraUobdL3iiAMhMmHHfCmnf` zeb-a-nodew-04.xahaud.xyz | 3 |
+
+`run-mainnet-status.cmd` at 17:58: three of three nodes reachable and in consensus, every node
+`paid until 2026-09-05T19:31:02Z`, each with its `last renewed lcl`. One
+reading to distrust: HotPocket's `peers` count in the status line — the primary reported
+`peers 0` while voting in step with the other two, so a zero there is not by itself the
+tenth deployment's symptom; stuck ledgers and a one-node UNL on the secondaries are.
+
+The master key is **not** retired. The next renewals fall due about 17:31 UTC on 5 September,
+two moments before the leases end, with nobody watching; the order that the ninth run taught
+stands: let the cluster renew all its nodes unattended at least twice (two days) before
+`run-mainnet-retire.cmd`, and let it live a week alone before inviting a peer. Still to check
+on the first day with money: that the first redemption and payout — every one of the
+contract's own transactions carries an `everlink/intent` memo — are accepted at the usual
+multisig fee (a `telINSUF_FEE_P` in the diagnostics would mean `baseFeeDrops` needs raising).
 
 Testnet (`wss://hooks-testnet-v3.xrpl-labs.com`) is blocked at `no-evr`: the foundation's
 `giftBetaEvr` requests are answered by hand. Devnet is not live.
