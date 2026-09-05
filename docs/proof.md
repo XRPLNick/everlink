@@ -229,18 +229,46 @@ round of its last renewal. The master key of this account is not retired: until 
 has renewed all its nodes twice with nobody watching (the next renewals fall due about 17:31
 UTC on 5 September), a person can still sweep it.
 
+## Day three: the cluster renews itself with nobody watching
+
+The leases bought on the evening of 4 September ran to 19:31 UTC on 5 September. The
+contract renews a node once two moments or less of its hosting remain, so the renewals were
+due at 17:31 UTC, and at 17:31 UTC, with nobody watching and nothing asked, the account's
+transaction list shows:
+
+| UTC | Ledger | Hash | What it is |
+|---|---|---|---|
+| 17:31:12 | 25,589,511 | `5CEC3B11870533155C9B71055A8C645970E886DFF7832253A1E58F33FB83DAAB` | `Payment` of 0.000024 EVR to `rLJU57DimMryraUobdL3iiAMhMmHHfCmnf` (zeb-a-nodew-04.xahaud.xyz), `evnExtendLease`, three signers — 24 more moments for node 3 |
+| 17:31:21 | 25,589,513 | `FE18131D9D7A216F3F18E000755D7A0FF3048EB61F90732C84D1DE0F9DF07C7C` | the same for node 2, `rfHECp4mtFnc6Y3jTsknjJocCisCVjtjf9` (xrp-arnie13.sbs.xrp-arnie1.com), three signers |
+| 17:31:30 | 25,589,516 | `5C26F049670BC0ECD6BAE5AC18D9C8CDD75C1233D2A041ED830B2798E1BD8658` | the same for node 1, `rfW86DFVRKUCc53pKdWTyGFMTfeYNNERhs` (evernode.kimchigraphics.com), three signers |
+
+Three consecutive rounds, nine seconds apart, 600 drops of fee each. The order is the core's:
+the three leases ended at the same moment, so the tie is broken by node id, and
+`ed3c1718…` (zeb-a-nodew-04) comes before `ed9888c2…` and `eddb59e8…`. Between the two
+renewal rounds the account did nothing else, and the day before, at 19:30–19:31 UTC, the three
+hosts of the abandoned tenth deployment burned their lease tokens on schedule
+(`2CA07B6C…`, `D955BCE8…`, `D0C54520…`), as the ninth cluster's hosts had.
+
+This is the first time a cluster of this project has renewed all of its nodes unattended.
+The next renewals fall due about 17:31 UTC on 6 September; the master key stays with a
+person until they too have happened.
+
 ## What this does and does not prove
 
 It proves that a HotPocket contract running on three Evernode hosts observed the ledger,
 verified an off-ledger payment-channel claim, routed an ILP/STREAM payment, produced valid
 multisigned Xahau transactions under 2-of-3 consensus, paid for its own hosting from its own
-account — four times, the last of them with no one watching — and that no person could sign
-for that account after 20:43 UTC on 3 September: no operator process anywhere, no human
-signing anything after the cluster was created, and no key left that could.
+account — ten times across two clusters, the last four of them with no one watching — and
+that no person could sign for the first cluster's account after 20:43 UTC on 3 September: no
+operator process anywhere, no human signing anything after the cluster was created, and no
+key left that could. (The second cluster's account still has its master key, on purpose, until
+it has renewed itself unattended twice.)
 
 What it does not prove is that the hosts cannot collude: two of the three could, in
 principle, sign outside consensus. That is the custodial risk the design note's §5 and §9
-describe, and why the float is pocket money. And it does not yet prove that a cluster keeps
-itself alive: the first one did not, and took its account with it; its successor renewed all
-three of its leases in its second minute, with the retry that the death taught, and has a day
-to show that it does so again with nobody watching.
+describe, and why the float is pocket money. And it proves only the beginning of staying
+alive: the first self-funding cluster died at its second round of renewals and took its
+account with it; its successor renewed all three of its leases in its second minute, with the
+retry that the death taught, and again a day later with nobody watching. One unattended
+renewal is a day, not a habit — the account's transaction list will show whether the habit
+holds, and nothing but the cluster can add to it.

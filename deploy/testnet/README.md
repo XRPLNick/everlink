@@ -189,10 +189,22 @@ reading to distrust: HotPocket's `peers` count in the status line — the primar
 `peers 0` while voting in step with the other two, so a zero there is not by itself the
 tenth deployment's symptom; stuck ledgers and a one-node UNL on the secondaries are.
 
-The master key is **not** retired. The next renewals fall due about 17:31 UTC on 5 September,
-two moments before the leases end, with nobody watching; the order that the ninth run taught
-stands: let the cluster renew all its nodes unattended at least twice (two days) before
-`run-mainnet-retire.cmd`, and let it live a week alone before inviting a peer. Still to check
+### Day three (5 September): the first unattended renewals
+
+Due at 17:31 UTC, two moments before the leases' end at 19:31; done at 17:31:12, 17:31:21 and
+17:31:30 UTC (ledgers 25,589,511 / 513 / 516; `5CEC3B11…`, `FE18131D…`, `5C26F049…`; 0.000024
+EVR each, three signers, 600 drops) — zeb-a-nodew-04 first, then xrp-arnie13, then
+evernode.kimchigraphics.com, which is the core's tie-break by node id when the leases end
+together. `run-mainnet-status.cmd` at 17:59: 3/3 nodes advancing and vote-synced at round
+19,770, each node `paid until 2026-09-06T19:31:02Z`, `last renewed lcl` 19392 / 19393 / 19394,
+account 9.991838 XAH and 0.999844 EVR, no errors in the recorded rounds. everpocket's record
+reads `life 50/2` per node: two moments bought by evdevkit, two renewals of 24 by the contract.
+The abandoned tenth cluster's hosts burned their tokens at 19:30–19:31 UTC the evening before.
+
+The master key is **not** retired. The next renewals fall due about 17:31 UTC on 6 September;
+the order that the ninth run taught stands: let the cluster renew all its nodes unattended
+at least twice (two days) before `run-mainnet-retire.cmd`, and let it live a week alone
+before inviting a peer. Still to check
 on the first day with money: that the first redemption and payout — every one of the
 contract's own transactions carries an `everlink/intent` memo — are accepted at the usual
 multisig fee (a `telINSUF_FEE_P` in the diagnostics would mean `baseFeeDrops` needs raising).

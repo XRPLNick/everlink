@@ -33,8 +33,11 @@ async function probe(node) {
     let info = null; let diag = null;
     try { info = await read({ t: 'info' }, 8000); } catch (e) { info = { error: e.message }; }
     try { diag = await read({ t: 'diag', probe: true, layers: true }, 60000); } catch (e) { diag = { error: e.message }; }
-    let leaseLog = null;
-    try { leaseLog = await read({ t: 'diag', events: 40, filter: 'lease|nomad' }, 30000); } catch (e) { leaseLog = null; }
+    // Renewal history ("lease: renewing / renewed / failed") separately from everpocket's
+    // housekeeping summary, which prints two lines every ten rounds and would crowd it out.
+    let leaseLog = null; let nomadLog = null;
+    try { leaseLog = await read({ t: 'diag', events: 30, filter: 'lease:' }, 30000); } catch (e) { leaseLog = null; }
+    try { nomadLog = await read({ t: 'diag', events: 4, filter: 'nomad lcl' }, 30000); } catch (e) { nomadLog = null; }
     const adv = s2.ledgerSeqNo > s1.ledgerSeqNo;
     say(`${node.domain}:${node.userPort} ${node.host}  connected in ${Date.now() - t0} ms; hp ${s2.hpVersion}; ledger ${s1.ledgerSeqNo} -> ${s2.ledgerSeqNo} after 7 s (${adv ? 'ADVANCING' : 'STUCK'}); vote ${s2.voteStatus}; unl ${s2.currentUnl.length} [${s2.currentUnl.map((u) => String(u).slice(0, 10)).join(' ')}]; peers ${(s2.peers || []).length}`);
     say(`  contract: ${info && info.connectorAddress ? `${info.connectorAddress} master ${info.masterAddress} rounds ${info.rounds} stats ${JSON.stringify(info.stats)}` : JSON.stringify(info)}`);
@@ -58,7 +61,8 @@ async function probe(node) {
     if (diag && diag.process) say(`  process: ${JSON.stringify(diag.process)}; dirs ${JSON.stringify(diag.dirs)}`);
     if (diag && diag.patch) say(`  patch.cfg: ${JSON.stringify(diag.patch)}; process ${JSON.stringify(diag.process)}`);
     if (diag && diag.events && diag.events.length) { say(`  last events on the node:`); for (const e of diag.events.slice(-24)) say(`    ${e}`); }
-    if (leaseLog && leaseLog.events && leaseLog.events.length) { say(`  last lease/housekeeping events on the node:`); for (const e of leaseLog.events.slice(-40)) say(`    ${e}`); }
+    if (leaseLog && leaseLog.events && leaseLog.events.length) { say(`  last renewal events on the node:`); for (const e of leaseLog.events.slice(-30)) say(`    ${e}`); }
+    if (nomadLog && nomadLog.events && nomadLog.events.length) { say(`  last housekeeping summaries on the node:`); for (const e of nomadLog.events.slice(-4)) say(`    ${e}`); }
     return { node: node.host, ledger: s2.ledgerSeqNo, advancing: adv, unl: s2.currentUnl, peers: s2.peers, info, diag };
   } finally { await client.close().catch(() => {}); }
 }

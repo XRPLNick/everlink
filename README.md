@@ -29,7 +29,10 @@ That evening the rebuilt contract went out on a fresh account, on the same three
 renewed all three of its leases in its second minute — the first attempt failed because the
 other signers had not joined the mesh yet, the per-node backoff retried it — three EVR payments
 in three consecutive rounds ([docs/proof.md](docs/proof.md#day-two-evening-a-new-cluster-renews-its-own-leases-in-its-second-minute)).
-Its master key stays in a person's hands until it has renewed unattended twice. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
+A day later, at 17:31 UTC on 5 September, it renewed all three again with nobody watching
+([docs/proof.md](docs/proof.md#day-three-the-cluster-renews-itself-with-nobody-watching)) — the
+first cluster of this project to do so. Its master key stays in a person's hands until it has
+done that twice. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
 end-to-end are tested (`npm test`, 27 tests); the local `hpdevkit` run is in `deploy/local/`,
 the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
@@ -146,8 +149,9 @@ Outputs: `ilp`, `claim_ack`, `payout {submitted|validated|failed}`, `last_will`,
 * Staying alive is not yet proven. Two mainnet clusters renewed leases on their own and both
   died at a later renewal; the second one's failure is diagnosed only by inference, because
   its diagnostics kept a minute of history. The rebuilt loop (one node per round, most urgent
-  first, per-node backoff, full history) has renewed a mainnet cluster's three leases once, at
-  start-up, with a person watching; its first unattended renewals are due on 5 September.
+  first, per-node backoff, full history) has renewed a mainnet cluster's three leases twice:
+  at start-up with a person watching, and a day later with nobody watching. One unattended
+  renewal is a day, not a habit.
 * Deployment is not reliable: the tenth mainnet deployment — the ninth's procedure on the
   hour's best-ranked hosts — never formed a mesh, for reasons the tooling cannot see, while the
   eleventh, on the ninth's hosts, came up at once ([deploy/testnet/README.md](deploy/testnet/README.md#tenth-deployment-1730-utc-4-september-the-mesh-never-formed)).
