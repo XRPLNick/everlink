@@ -9,36 +9,32 @@ quorum of them — 2 of 3 on the mainnet run — has to sign every transaction),
 they use through ILP fees, and the contract pays for its own hosting by extending its Evernode
 leases in EVR from that account.
 
-**Status: ran on Evernode mainnet.** On 3 September 2026 the contract ran on three Evernode
-mainnet hosts (two networks — the two Dutch hosts share an IP address, so at most two independent
-operators; leases 0.000001 EVR/moment each) and settled a real payment on Xahau mainnet: Alice opened a 5 XAH channel to the cluster account, streamed a 3 XAH claim,
-paid Bob 1 XAH with the unmodified `ilp-protocol-stream` (24 s at 3-second rounds), and the
-cluster redeemed her channel and paid Bob 0.996499 XAH with transactions signed by its three
-signer keys under consensus (2-of-3), then closed the channel on her request and returned her
-unspent 2 XAH. A second cluster, deployed the same evening on three new hosts with two-hour
-leases, then extended its own leases without anyone asking — three EVR payments to its hosts
-co-signed by its three nodes — buying itself nineteen more hours of hosting for 0.000051 EVR. With that proven, the
-account's master key was disabled (`AccountSet asfDisableMaster`, ledger 25,544,790): the
-cluster's 2-of-3 signer list became the only thing that could move funds in it — nobody ran
-the connector, and nobody controlled its account. The next day it renewed one lease on its
-own and failed to renew the other two; at 15:20 UTC on 4 September their hosts reclaimed
-those nodes, and with one node of three left the cluster could neither close ledgers nor sign.
-Its account is frozen for good — nobody's money, no peers had balances — and the renewal loop
-has been rebuilt so that one host cannot hold up the others ([docs/proof.md](docs/proof.md#day-two-how-the-second-cluster-died)).
-That evening the rebuilt contract went out on a fresh account, on the same three hosts, and
-renewed all three of its leases in its second minute — the first attempt failed because the
-other signers had not joined the mesh yet, the per-node backoff retried it — three EVR payments
-in three consecutive rounds ([docs/proof.md](docs/proof.md#day-two-evening-a-new-cluster-renews-its-own-leases-in-its-second-minute)).
-A day later, at 17:31 UTC on 5 September, it renewed all three again with nobody watching
-([docs/proof.md](docs/proof.md#day-three-the-cluster-renews-itself-with-nobody-watching)) — the
-first cluster of this project to do so. Its master key stays in a person's hands until it has
-done that twice. The deterministic core, the peer plugin, the multi-node simulator and the STREAM
-end-to-end are tested (`npm test`, 27 tests); the local `hpdevkit` run is in `deploy/local/`,
-the Evernode kit and the mainnet transcript in [deploy/testnet/README.md](deploy/testnet/README.md).
+**Status: running on Evernode mainnet, paying for its own hosting.**
+
+*3 September 2026.* Three mainnet hosts, one cluster: Alice opened a 5 XAH channel to the
+cluster's account, streamed a 3 XAH claim and paid Bob 1 XAH with the unmodified
+`ilp-protocol-stream`; the cluster redeemed her channel, paid Bob out and closed the channel on
+her request, every transaction signed 2-of-3 under consensus. A second cluster that evening
+bought itself nineteen more hours of hosting without anyone asking, and with that proven its
+master key was retired: nobody ran the connector, nobody controlled its account.
+
+*4 September.* That cluster renewed one lease and not the other two; its hosts reclaimed the
+nodes and the account is frozen for good — nobody's money, no peer had a balance
+([why](docs/proof.md#day-two-how-the-second-cluster-died)). The renewal loop was rebuilt so that
+one host cannot hold up the others, and the same evening a new cluster on a fresh account
+renewed all three of its leases in its second minute
+([hashes](docs/proof.md#day-two-evening-a-new-cluster-renews-its-own-leases-in-its-second-minute)).
+
+*5 September.* The new cluster renewed all three again with nobody watching — the first here to
+do so ([hashes](docs/proof.md#day-three-the-cluster-renews-itself-with-nobody-watching)). Its
+master key stays in a person's hands until it has done that twice.
+
 Every mainnet transaction, with hashes and signers, is laid out for independent checking in
-[docs/proof.md](docs/proof.md), together with a packet-level trace of a payment through the
-cluster: every ILP Prepare/Fulfill/Reject, the STREAM frames inside them decrypted, every
-fulfillment hashed against its condition ([docs/proof/stream-trace.txt](docs/proof/stream-trace.txt)).
+[docs/proof.md](docs/proof.md), with a packet-level trace of a payment through the cluster
+([docs/proof/stream-trace.txt](docs/proof/stream-trace.txt)); the deployment transcript is in
+[deploy/testnet/README.md](deploy/testnet/README.md). 27 tests (`npm test`) cover the core, the
+simulator, the plugin with STREAM end-to-end and the production bridge; the local `hpdevkit`
+run is in `deploy/local/`.
 
 ```
 npm install --ignore-scripts      # blake3 (a hotpocket-js-client dep) tries to download a native build otherwise
